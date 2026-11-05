@@ -1,0 +1,18 @@
+{
+  "name": "@learnloop/notifications",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Notification inbox and transactional email",
+  "exports": {
+    ".": "./src/handler.js",
+    "./*": "./src/*.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ses": "^3.700.0",
+    "@learnloop/shared": "1.0.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@learnloop/dev",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local development server: all services in one process with an in-memory store",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@learnloop/admin": "1.0.0",
+    "@learnloop/billing": "1.0.0",
+    "@learnloop/catalog": "1.0.0",
+    "@learnloop/identity": "1.0.0",
+    "@learnloop/learning": "1.0.0",
+    "@learnloop/notifications": "1.0.0",
+    "@learnloop/shared": "1.0.0"
+  }
+}

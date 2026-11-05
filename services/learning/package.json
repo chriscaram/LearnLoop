@@ -1,0 +1,17 @@
+{
+  "name": "@learnloop/learning",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lessons, lesson progress and quizzes",
+  "exports": {
+    ".": "./src/handler.js",
+    "./*": "./src/*.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@learnloop/shared": "1.0.0"
+  }
+}

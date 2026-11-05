@@ -1,0 +1,24 @@
+{
+  "name": "learnloop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "LearnLoop: a subscription online-course platform on AWS (mock data).",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "tools/*",
+    "web",
+    "infra"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "dev": "node tools/dev/src/dev.js",
+    "build:web": "npm run build -w web",
+    "state:reset": "node tools/ops/src/state-reset.js",
+    "flag": "node packages/shared/bin/flag.js"
+  }
+}

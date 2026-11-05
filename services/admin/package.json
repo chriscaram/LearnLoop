@@ -1,0 +1,19 @@
+{
+  "name": "@learnloop/admin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Staff-only learner list, staff messages and feature flags",
+  "exports": {
+    ".": "./src/handler.js",
+    "./*": "./src/*.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@learnloop/learning": "1.0.0",
+    "@learnloop/notifications": "1.0.0",
+    "@learnloop/shared": "1.0.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@learnloop/identity",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sign-in, session and current user",
+  "exports": {
+    ".": "./src/handler.js",
+    "./*": "./src/*.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@learnloop/shared": "1.0.0"
+  }
+}
