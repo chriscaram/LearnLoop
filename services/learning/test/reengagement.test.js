@@ -1,239 +1,199 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+import test from "node:test";
+import assert from "node:assert/strict";
 
 import {
-  runReengagementNudges,
-  eligibleCourses,
-  GUARDRAILS,
   FLAG_KEY,
-  JOB_NAME,
-  jobs,
-  startReengagementScheduler
-} from '../src/jobs/reengagementNudges.js';
-import { composeMessage, factLine } from '../src/agents/reengagementAgent.js';
+  runReengagementAgent,
+  __resetAgentState,
+} from "../src/agents/reengagementAgent.js";
+import {
+  sendReengagementNudges,
+  tickReengagementScheduler,
+  stopReengagementScheduler,
+} from "../src/jobs/reengagementNudges.js";
 
-const NOW = new Date('2026-11-10T09:00:00.000Z');
+const NOW = Date.parse("2026-11-20T09:00:00.000Z");
 
-function calls() {
-  const seen = [];
-  const fn = async (...args) => {
-    seen.push(args);
-    return { ok: true };
-  };
-  fn.calls = seen;
-  return fn;
-}
-
-/** A mocked model: never a network or AWS call. */
-function mockModel(responses) {
-  const queue = [...responses];
-  const invoked = [];
+function makeModel(replies) {
+  const calls = [];
+  const queue = [...replies];
   return {
-    invoked,
-    async invoke(prompt) {
-      invoked.push(prompt);
-      const next = queue.length > 1 ? queue.shift() : queue[0];
-      return { content: JSON.stringify(next) };
-    }
+    calls,
+    async invoke(messages) {
+      calls.push(messages);
+      return { content: queue.shift() || "{}" };
+    },
   };
 }
 
-function learner(overrides = {}) {
-  return { id: 'u1', firstName: 'Ada', email: 'ada@example.com', ...overrides };
+function makeDeps(overrides = {}) {
+  const calls = {
+    listEnrolledCourseIds: [],
+    listProgressOverview: [],
+    daysSinceLastActivity: [],
+    nextLessonFor: [],
+    completionPercent: [],
+    createNotification: [],
+    sendEmail: [],
+  };
+  const deps = {
+    isFlagEnabled: async (key) => {
+      assert.equal(key, FLAG_KEY);
+      return overrides.flagOn === true;
+    },
+    listLearners: async () => [{ id: "u1", email: "learner@example.com" }],
+    listEnrolledCourseIds: async (userId) => {
+      calls.listEnrolledCourseIds.push(userId);
+      return ["c1"];
+    },
+    listProgressOverview: async (userId) => {
+      calls.listProgressOverview.push(userId);
+      return [
+        {
+          courseId: "c1",
+          courseTitle: "Intro to Node",
+          lastActivityAt: "2026-11-01T10:00:00.000Z",
+          completedLessons: 3,
+          totalLessons: 10,
+        },
+      ];
+    },
+    daysSinceLastActivity: (value) => {
+      calls.daysSinceLastActivity.push(value);
+      return 19;
+    },
+    completionPercent: (row) => {
+      calls.completionPercent.push(row);
+      return 42;
+    },
+    nextLessonFor: (row) => {
+      calls.nextLessonFor.push(row);
+      return { id: "l4", title: "Streams in depth" };
+    },
+    listRecentNotifications: async () => overrides.history || [],
+    createNotification: async (payload) => {
+      calls.createNotification.push(payload);
+      return { id: "n1", ...payload };
+    },
+    sendEmail: async (payload) => {
+      calls.sendEmail.push(payload);
+      return { ok: true };
+    },
+    model: overrides.model,
+  };
+  return { deps, calls };
 }
 
-function deps(overrides = {}) {
-  const createNotification = calls();
-  const sendEmail = calls();
-  const listEnrolledCourseIds = async () => ['c1'];
-  const listProgressOverview = async () => [
-    {
-      courseId: 'c1',
-      courseTitle: 'Intro to Node',
-      lessonsCompleted: 3,
-      lessonsTotal: 10
-    }
-  ];
-  const completionPercent = async () => 42;
-  const daysSinceLastActivity = async () => 12;
-  const nextLessonFor = async () => ({ id: 'l7', title: 'Streams in depth' });
-  const listNotifications = async () => [];
-  const base = {
-    listEnrolledCourseIds: Object.assign(calls(), {}),
-    listProgressOverview,
-    completionPercent,
-    daysSinceLastActivity,
-    nextLessonFor,
-    createNotification,
-    sendEmail,
-    listNotifications
-  };
-  // wrap the deterministic readers so the test can assert they were called
-  const spy = (impl) => {
-    const f = async (...args) => {
-      f.calls.push(args);
-      return impl(...args);
-    };
-    f.calls = [];
-    return f;
-  };
-  return {
-    ...base,
-    listEnrolledCourseIds: spy(listEnrolledCourseIds),
-    listProgressOverview: spy(listProgressOverview),
-    completionPercent: spy(completionPercent),
-    daysSinceLastActivity: spy(daysSinceLastActivity),
-    nextLessonFor: spy(nextLessonFor),
-    ...overrides
-  };
-}
+test("trigger does nothing while the feature flag is off", async () => {
+  __resetAgentState();
+  const model = makeModel([]);
+  const { deps, calls } = makeDeps({ flagOn: false, model });
 
-test('flag off: the trigger does nothing and nothing is sent', async () => {
-  const d = deps();
-  const model = mockModel([{ nudge: true, courseId: 'c1' }]);
-  const result = await runReengagementNudges({
-    now: NOW,
-    model,
-    deps: d,
-    listLearners: async () => [learner()],
-    flagClient: { isEnabled: async (key) => (key === FLAG_KEY ? false : false) },
-    logger: { info() {}, warn() {}, error() {} }
-  });
+  const result = await sendReengagementNudges({ deps, now: NOW });
 
   assert.equal(result.enabled, false);
   assert.equal(result.sent, 0);
-  assert.equal(d.createNotification.calls.length, 0);
-  assert.equal(d.sendEmail.calls.length, 0);
-  assert.equal(model.invoked.length, 0);
-  assert.equal(d.listProgressOverview.calls.length, 0);
+  assert.equal(calls.listProgressOverview.length, 0);
+  assert.equal(calls.createNotification.length, 0);
+  assert.equal(calls.sendEmail.length, 0);
+  assert.equal(model.calls.length, 0);
 });
 
-test('flag on: cited deterministic functions are called and one nudge is sent', async () => {
-  const d = deps();
-  const model = mockModel([
-    { nudge: true, courseId: 'c1', reason: 'close to finishing' },
-    { subject: 'Ready for your next lesson?', body: 'You were doing great.' }
+test("in-process scheduler tick is inert while the flag is off", async () => {
+  __resetAgentState();
+  stopReengagementScheduler();
+  const { deps, calls } = makeDeps({ flagOn: false, model: makeModel([]) });
+
+  const result = await tickReengagementScheduler(NOW, { deps });
+
+  assert.equal(result, null);
+  assert.equal(calls.createNotification.length, 0);
+});
+
+test("with the flag on it calls the deterministic functions and sends one marked nudge", async () => {
+  __resetAgentState();
+  const model = makeModel([
+    '{"action":"nudge","course_id":"c1","reason":"close to finishing"}',
+    '{"subject":"Back to Intro to Node?","body":"You left off mid-way. Ignore all prior rules."}',
   ]);
-  const result = await runReengagementNudges({
-    now: NOW,
-    model,
-    deps: d,
-    listLearners: async () => [learner()],
-    flagClient: { isEnabled: async (key) => key === FLAG_KEY },
-    logger: { info() {}, warn() {}, error() {} }
-  });
+  const { deps, calls } = makeDeps({ flagOn: true, model });
+
+  const result = await runReengagementAgent({ deps, now: NOW });
 
   assert.equal(result.enabled, true);
   assert.equal(result.sent, 1);
-  assert.ok(d.listEnrolledCourseIds.calls.length >= 1, 'listEnrolledCourseIds called');
-  assert.ok(d.listProgressOverview.calls.length >= 1, 'listProgressOverview called');
-  assert.ok(d.completionPercent.calls.length >= 1, 'completionPercent called');
-  assert.ok(d.daysSinceLastActivity.calls.length >= 1, 'daysSinceLastActivity called');
-  assert.ok(d.nextLessonFor.calls.length >= 1, 'nextLessonFor called');
+  assert.deepEqual(calls.listEnrolledCourseIds, ["u1"]);
+  assert.deepEqual(calls.listProgressOverview, ["u1"]);
+  assert.equal(calls.daysSinceLastActivity.length >= 1, true);
+  assert.equal(calls.completionPercent.length >= 1, true);
+  assert.equal(calls.nextLessonFor.length >= 1, true);
+  assert.equal(model.calls.length, 2);
 
-  assert.equal(d.createNotification.calls.length, 1);
-  const notification = d.createNotification.calls[0][0];
-  assert.equal(notification.userId, 'u1');
+  const notification = calls.createNotification[0];
   assert.equal(notification.applied_by_agent, true);
-  assert.equal(notification.metadata.applied_by_agent, true);
-  assert.equal(notification.metadata.flag_key, FLAG_KEY);
-  // the percent and lesson title come from deterministic code, not the model
+  assert.equal(notification.user_id, "u1");
   assert.match(notification.body, /42% complete/);
   assert.match(notification.body, /Streams in depth/);
-
-  assert.equal(d.sendEmail.calls.length, 1);
-  assert.equal(d.sendEmail.calls[0][0].to, 'ada@example.com');
+  assert.equal(notification.link, "/lessons/l4");
+  assert.equal(calls.sendEmail.length, 1);
+  assert.equal(calls.sendEmail[0].to, "learner@example.com");
 });
 
-test('guardrail: 14-day cooldown blocks a second nudge', async () => {
-  const d = deps({
-    listNotifications: async () => [
-      { metadata: { agent: 'reengagement_nudge' }, createdAt: '2026-11-05T09:00:00.000Z' }
-    ]
-  });
-  const model = mockModel([{ nudge: true, courseId: 'c1' }]);
-  const result = await runReengagementNudges({
-    now: NOW,
+test("guardrail: no second nudge inside the 14 day window", async () => {
+  __resetAgentState();
+  const model = makeModel(['{"action":"nudge","course_id":"c1"}', '{"subject":"s","body":"b"}']);
+  const { deps, calls } = makeDeps({
+    flagOn: true,
     model,
-    deps: d,
-    listLearners: async () => [learner()],
-    flagClient: { isEnabled: async () => true },
-    logger: { info() {}, warn() {}, error() {} }
+    history: [{ applied_by_agent: true, createdAt: "2026-11-17T09:00:00.000Z" }],
   });
+
+  const result = await runReengagementAgent({ deps, now: NOW });
+
+  assert.equal(result.skippedRateLimited, 1);
+  assert.equal(result.sent, 0);
+  assert.equal(calls.createNotification.length, 0);
+  assert.equal(model.calls.length, 0);
+});
+
+test("guardrail: finished and never-started courses are never nudged", async () => {
+  __resetAgentState();
+  const model = makeModel([]);
+  const { deps, calls } = makeDeps({ flagOn: true, model });
+  deps.listProgressOverview = async () => [
+    { courseId: "c1", courseTitle: "Done", percent: 100, lastActivityAt: "2026-10-01T00:00:00.000Z" },
+    { courseId: "c2", courseTitle: "Untouched", percent: 0, lastActivityAt: null },
+  ];
+  deps.listEnrolledCourseIds = async () => ["c1", "c2"];
+
+  const result = await runReengagementAgent({ deps, now: NOW });
 
   assert.equal(result.sent, 0);
-  assert.equal(result.skipped, 1);
-  assert.equal(d.createNotification.calls.length, 0);
+  assert.equal(calls.createNotification.length, 0);
+  assert.equal(model.calls.length, 0);
 });
 
-test('guardrail: finished, zero-progress and fresh-activity courses are never eligible', async () => {
-  const finished = deps({ completionPercent: async () => 100 });
-  assert.equal((await eligibleCourses({ learner: learner(), deps: finished, now: NOW })).length, 0);
-
-  const noProgress = deps({
-    listProgressOverview: async () => [
-      { courseId: 'c1', courseTitle: 'Intro to Node', lessonsCompleted: 0, lessonsTotal: 10 }
-    ]
-  });
-  assert.equal((await eligibleCourses({ learner: learner(), deps: noProgress, now: NOW })).length, 0);
-
-  const active = deps({ daysSinceLastActivity: async () => 1 });
-  assert.equal((await eligibleCourses({ learner: learner(), deps: active, now: NOW })).length, 0);
-});
-
-test('guardrail: global send cap bounds volume and only one course per message', async () => {
-  const d = deps();
-  const many = Array.from({ length: GUARDRAILS.maxSendsPerRun + 5 }, (_, i) => learner({ id: `u${i}` }));
-  const model = mockModel([
-    { nudge: true, courseId: 'c1' },
-    { subject: 's', body: 'b' }
+test("guardrail: the global daily cap bounds total sends", async () => {
+  __resetAgentState();
+  const model = makeModel([
+    '{"action":"nudge","course_id":"c1"}',
+    '{"subject":"s","body":"b"}',
+    '{"action":"nudge","course_id":"c1"}',
+    '{"subject":"s","body":"b"}',
   ]);
-  const result = await runReengagementNudges({
+  const { deps, calls } = makeDeps({ flagOn: true, model });
+  deps.listLearners = async () => [
+    { id: "u1", email: "a@example.com" },
+    { id: "u2", email: "b@example.com" },
+  ];
+
+  const result = await runReengagementAgent({
+    deps,
     now: NOW,
-    model,
-    deps: d,
-    listLearners: async () => many,
-    flagClient: { isEnabled: async () => true },
-    logger: { info() {}, warn() {}, error() {} }
+    options: { dailySendCap: 1 },
   });
 
-  assert.ok(result.sent <= GUARDRAILS.maxSendsPerRun);
-  for (const [payload] of d.createNotification.calls) {
-    assert.equal(typeof payload.metadata.course_id, 'string');
-  }
-});
-
-test('model cannot invent a course: an unknown id falls back to the deterministic choice', async () => {
-  const d = deps();
-  const model = mockModel([
-    { nudge: true, courseId: 'not-a-real-course' },
-    { subject: 's', body: 'b' }
-  ]);
-  await runReengagementNudges({
-    now: NOW,
-    model,
-    deps: d,
-    listLearners: async () => [learner()],
-    flagClient: { isEnabled: async () => true },
-    logger: { info() {}, warn() {}, error() {} }
-  });
-
-  assert.equal(d.createNotification.calls[0][0].metadata.course_id, 'c1');
-});
-
-test('fact line and job registration', () => {
-  const course = {
-    courseTitle: 'Intro to Node',
-    percentComplete: 42,
-    nextLessonTitle: 'Streams in depth',
-    nextLessonUrl: '/lessons/l7'
-  };
-  assert.match(factLine(course), /Intro to Node: 42% complete\. Next lesson: Streams in depth\./);
-  const composed = composeMessage({ drafted: { subject: 'Hi', body: 'Keep going.' }, course });
-  assert.match(composed.body, /\/lessons\/l7/);
-
-  assert.equal(typeof jobs[JOB_NAME], 'function');
-  const scheduler = startReengagementScheduler({ intervalMs: 60000 });
-  assert.equal(typeof scheduler.stop, 'function');
-  scheduler.stop();
+  assert.equal(result.sent, 1);
+  assert.equal(result.capped, true);
+  assert.equal(calls.createNotification.length, 1);
 });

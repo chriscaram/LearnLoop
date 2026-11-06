@@ -5,11 +5,11 @@
   "type": "module",
   "main": "src/handler.js",
   "scripts": {
-    "test": "node --test test"
+    "test": "node --test test/"
   },
   "dependencies": {
-    "@langchain/aws": "^0.1.12",
-    "@langchain/core": "^0.3.40",
-    "@learnloop/shared": "*"
+    "@learnloop/shared": "*",
+    "@langchain/aws": "^1.5.2",
+    "@aws-sdk/client-sts": "^3.1163.0"
   }
 }
