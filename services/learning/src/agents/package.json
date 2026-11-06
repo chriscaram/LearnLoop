@@ -1,0 +1,11 @@
+{
+  "name": "@learnloop/learning-reengagement-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stalled-learner re-engagement agent (flag ga-find_a431764685ac) for the learning service",
+  "main": "trigger.js",
+  "dependencies": {
+    "@langchain/aws": "^0.1.18"
+  }
+}
