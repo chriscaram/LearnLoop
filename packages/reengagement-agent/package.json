@@ -1,0 +1,22 @@
+{
+  "name": "@learnloop/reengagement-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Re-engagement nudge agent for stalled course progress (flag: ga-find_a431764685ac)",
+  "main": "src/job.js",
+  "exports": {
+    ".": "./src/job.js",
+    "./agent": "./src/agent.js",
+    "./deps": "./src/deps.js",
+    "./model": "./src/model.js"
+  },
+  "scripts": {
+    "test": "node --test test"
+  },
+  "dependencies": {
+    "@langchain/aws": "^0.1.11",
+    "@langchain/core": "^0.3.40",
+    "@aws-sdk/client-sts": "^3.699.0"
+  }
+}
