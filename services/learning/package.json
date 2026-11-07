@@ -2,13 +2,13 @@
   "name": "@learnloop/learning",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "main": "src/handler.js",
   "scripts": {
     "test": "node --test test"
   },
   "dependencies": {
     "@learnloop/shared": "*",
-    "@langchain/aws": "^0.1.11",
-    "@aws-sdk/client-sts": "^3.699.0"
+    "@langchain/aws": "^1.5.2"
   }
 }

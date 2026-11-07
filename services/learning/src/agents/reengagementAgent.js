@@ -1,215 +1,107 @@
-'use strict';
+import { ChatBedrockConverse } from "@langchain/aws";
 
-/**
- * Re-engagement agent (finding find_a431764685ac, NBF-USAGE-ACTOR_INACTIVITY).
- *
- * The model is allowed to do exactly two things:
- *   1. decide            -> nudge now / stay silent, and which ONE eligible course
- *   2. generate_content  -> a subject and a short body
- *
- * Every number, link and lesson name is injected by the deterministic code in
- * services/learning/src/services/progress.js. Drafts that contain digits or
- * links are rejected and replaced by a deterministic template.
- */
+const DEFAULT_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 
-const DEFAULT_MODEL_ID = 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
-const MAX_SUBJECT_CHARS = 90;
-const MAX_BODY_CHARS = 420;
+const SYSTEM_PROMPT = [
+  "You help an online course platform re-engage learners who stalled mid-course.",
+  "You are given ONLY deterministic facts already computed by the application:",
+  "for each candidate course the course title, the completion percent, lessons remaining,",
+  "the title of the learner's next uncompleted lesson, whole days since their last lesson activity,",
+  "and whether they were nudged before.",
+  "",
+  "Decide one of two things:",
+  '- {"action":"skip"} when the learner is not genuinely stalled, has resumed, or a message would not help.',
+  '- {"action":"nudge","courseId":"<one of the candidate course ids>","subject":"...","body":"..."}',
+  "",
+  "Rules you must respect:",
+  "- Choose at most ONE course, normally the one closest to completion.",
+  "- Never state, compute, re-phrase or alter any number, percentage, date, lesson name or link.",
+  "  The application appends the exact percent, next lesson title and link itself.",
+  "- The body is at most three short sentences of encouragement, warm and plain, no numbers.",
+  "- Reply with a single JSON object and nothing else.",
+].join("\n");
 
-async function resolveCredentials() {
+let cachedModel = null;
+
+async function temporaryCredentials() {
   const roleArn = process.env.BEDROCK_ROLE_ARN;
   if (!roleArn) return undefined;
-
-  const { STSClient, AssumeRoleCommand } = require('@aws-sdk/client-sts');
+  const { STSClient, AssumeRoleCommand } = await import("@aws-sdk/client-sts");
   const sts = new STSClient({ region: process.env.AWS_REGION });
-  const out = await sts.send(
+  const result = await sts.send(
     new AssumeRoleCommand({
       RoleArn: roleArn,
-      RoleSessionName: 'ga-find-a431764685ac',
-      DurationSeconds: 900
-    })
+      RoleSessionName: "ga-reengagement-agent",
+      DurationSeconds: 3600,
+    }),
   );
-  const creds = out && out.Credentials;
+  const creds = result && result.Credentials;
   if (!creds) return undefined;
   return {
     accessKeyId: creds.AccessKeyId,
     secretAccessKey: creds.SecretAccessKey,
-    sessionToken: creds.SessionToken
+    sessionToken: creds.SessionToken,
   };
 }
 
-async function buildModel() {
-  const { ChatBedrockConverse } = require('@langchain/aws');
-  const options = {
+export async function createModel() {
+  const credentials = await temporaryCredentials();
+  return new ChatBedrockConverse({
     model: process.env.BEDROCK_MODEL_ID || DEFAULT_MODEL_ID,
     region: process.env.AWS_REGION,
     temperature: 0.2,
-    maxTokens: 400
-  };
-  const credentials = await resolveCredentials();
-  if (credentials) options.credentials = credentials;
-  return new ChatBedrockConverse(options);
+    maxTokens: 400,
+    ...(credentials ? { credentials } : {}),
+  });
 }
 
-function messageText(response) {
-  if (!response) return '';
-  const content = response.content !== undefined ? response.content : response;
-  if (typeof content === 'string') return content;
+function responseText(response) {
+  if (!response) return "";
+  const content = typeof response === "string" ? response : response.content;
+  if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .map((part) => (typeof part === 'string' ? part : part && part.text ? part.text : ''))
-      .join('');
+      .map((part) => (typeof part === "string" ? part : part && part.text ? part.text : ""))
+      .join("");
   }
-  return '';
+  if (response.text) return String(response.text);
+  return "";
 }
 
-function parseJson(text) {
-  if (!text) return null;
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end === -1 || end < start) return null;
+export function parseDecision(response, facts) {
+  const text = responseText(response);
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end <= start) return { action: "skip", reason: "unparsable_model_output" };
+  let parsed;
   try {
-    return JSON.parse(text.slice(start, end + 1));
+    parsed = JSON.parse(text.slice(start, end + 1));
   } catch (err) {
-    return null;
+    return { action: "skip", reason: "unparsable_model_output" };
   }
-}
-
-function clean(value, maxChars) {
-  if (typeof value !== 'string') return '';
-  const flat = value.replace(/\s+/g, ' ').trim();
-  return flat.length > maxChars ? `${flat.slice(0, maxChars - 1).trim()}…` : flat;
-}
-
-// The model may not produce numbers or links: those are deterministic.
-function draftIsSafe(text) {
-  if (!text) return false;
-  if (/\d/.test(text)) return false;
-  if (/https?:|www\.|\/\//i.test(text)) return false;
-  return true;
-}
-
-function factsFor(candidate) {
+  if (!parsed || parsed.action !== "nudge") return { action: "skip", reason: "model_chose_skip" };
+  const allowed = (facts && Array.isArray(facts.candidates) ? facts.candidates : []).map(
+    (candidate) => candidate.courseId,
+  );
+  const courseId = String(parsed.courseId || "");
+  if (!allowed.includes(courseId)) return { action: "skip", reason: "model_course_not_eligible" };
   return {
-    course_id: candidate.courseId,
-    course_title: candidate.courseTitle,
-    percent_complete: candidate.percentComplete,
-    lessons_completed: candidate.completedLessons,
-    lessons_total: candidate.totalLessons,
-    days_since_last_activity: candidate.daysSinceLastActivity,
-    next_lesson_title: candidate.nextLesson && candidate.nextLesson.title
+    action: "nudge",
+    courseId,
+    subject: typeof parsed.subject === "string" ? parsed.subject : "",
+    body: typeof parsed.body === "string" ? parsed.body : "",
   };
 }
 
-const DECIDE_SYSTEM = [
-  'You help an online course platform decide whether to send a learner one re-engagement message.',
-  'You receive only activity and progress facts that were computed by the application.',
-  'Never invent or recompute a number, a link or a lesson name.',
-  'Reply with JSON only: {"action":"nudge"|"skip","course_id":"<one of the given course ids>","reason":"<short>"}.',
-  'Choose "skip" when the learner does not look genuinely stalled or a nudge would not help.',
-  'If you nudge, pick exactly ONE course: prefer the one closest to completion, then the most recently touched.'
-].join(' ');
-
-const DRAFT_SYSTEM = [
-  'You draft a short, warm re-engagement message for a learner of an online course platform.',
-  'Reply with JSON only: {"subject":"<short subject>","body":"<2-3 short sentences>"}.',
-  'Do not include any digit, percentage, URL or lesson title: the application appends those facts itself.',
-  'No pressure, no guilt, no marketing claims, no promises about certificates or refunds.'
-].join(' ');
-
-async function decideCourse({ learner, candidates, model }) {
-  const payload = {
-    learner_ref: learner.id,
-    courses: candidates.map(factsFor)
-  };
+export async function decideNudge(facts, options = {}) {
+  const model = options.model || cachedModel || (cachedModel = await createModel());
   const response = await model.invoke([
-    { role: 'system', content: DECIDE_SYSTEM },
-    { role: 'user', content: JSON.stringify(payload) }
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: JSON.stringify(facts) },
   ]);
-  const parsed = parseJson(messageText(response)) || {};
-  if (parsed.action !== 'nudge') {
-    return { action: 'skip', reason: clean(parsed.reason, 120) || 'model_skip' };
-  }
-  const chosen = candidates.find((candidate) => candidate.courseId === parsed.course_id);
-  if (!chosen) {
-    return { action: 'skip', reason: 'model_course_not_eligible' };
-  }
-  return { action: 'nudge', candidate: chosen, reason: clean(parsed.reason, 120) || 'model_nudge' };
+  return parseDecision(response, facts);
 }
 
-async function draftMessage({ candidate, model }) {
-  const response = await model.invoke([
-    { role: 'system', content: DRAFT_SYSTEM },
-    {
-      role: 'user',
-      content: JSON.stringify({
-        course_title: candidate.courseTitle,
-        tone: 'encouraging, one short paragraph',
-        note: 'the application appends the exact progress and next lesson'
-      })
-    }
-  ]);
-  const parsed = parseJson(messageText(response)) || {};
-  const subject = clean(parsed.subject, MAX_SUBJECT_CHARS);
-  const body = clean(parsed.body, MAX_BODY_CHARS);
-  if (!draftIsSafe(subject) || !draftIsSafe(body)) {
-    return {
-      subject: `Ready to pick up ${candidate.courseTitle}?`,
-      body: 'You made a good start on this course. Here is where you left off, whenever you have a few minutes.',
-      fallback: true
-    };
-  }
-  return { subject, body, fallback: false };
+export function resetModelCache() {
+  cachedModel = null;
 }
-
-// Deterministic facts are appended here, never asked of the model.
-function composeMessage({ candidate, draft }) {
-  const nextLesson = candidate.nextLesson || {};
-  const link = nextLesson.id ? `/lessons/${nextLesson.id}` : `/courses/${candidate.courseId}`;
-  const facts = [
-    `${candidate.courseTitle}: ${candidate.percentComplete}% complete.`,
-    nextLesson.title ? `Your next lesson is "${nextLesson.title}".` : null,
-    `Continue: ${link}`
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  return {
-    subject: draft.subject,
-    body: `${draft.body}\n\n${facts}`,
-    link,
-    usedFallbackDraft: draft.fallback
-  };
-}
-
-/**
- * Plan one nudge for one learner. Returns { action: 'skip' } or
- * { action: 'nudge', candidate, message, reason }.
- */
-async function planNudge({ learner, candidates, model }) {
-  if (!candidates || candidates.length === 0) {
-    return { action: 'skip', reason: 'no_eligible_course' };
-  }
-  const resolved = model || (await buildModel());
-  const decision = await decideCourse({ learner, candidates, model: resolved });
-  if (decision.action !== 'nudge') return decision;
-
-  const draft = await draftMessage({ candidate: decision.candidate, model: resolved });
-  return {
-    action: 'nudge',
-    candidate: decision.candidate,
-    reason: decision.reason,
-    message: composeMessage({ candidate: decision.candidate, draft })
-  };
-}
-
-module.exports = {
-  DEFAULT_MODEL_ID,
-  MAX_BODY_CHARS,
-  MAX_SUBJECT_CHARS,
-  buildModel,
-  composeMessage,
-  draftMessage,
-  decideCourse,
-  planNudge
-};

@@ -1,9 +1,15 @@
-export default function AgentBadge({ item }) {
-  const byAgent = item?.applied_by_agent === true || item?.appliedByAgent === true;
-  if (!byAgent) return null;
-
+/**
+ * Visible marker for anything created by the re-engagement agent
+ * (records carry `applied_by_agent: true`).
+ *
+ * Usage in the notifications tray / list item:
+ *   <AgentBadge item={notification} />
+ */
+export default function AgentBadge({ item, className = "" }) {
+  const applied = Boolean(item && (item.applied_by_agent || item.appliedByAgent));
+  if (!applied) return null;
   return (
-    <span className="agent-badge" title="This message was created automatically by the re-engagement agent">
+    <span className={`badge badge-agent ${className}`.trim()} title="Created automatically by the re-engagement agent">
       Applied by agent
     </span>
   );
