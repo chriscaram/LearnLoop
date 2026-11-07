@@ -3,15 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Lessons, lesson progress and quizzes",
-  "exports": {
-    ".": "./src/handler.js",
-    "./*": "./src/*.js"
-  },
+  "main": "src/handler.js",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test"
   },
   "dependencies": {
-    "@learnloop/shared": "1.0.0"
+    "@learnloop/shared": "*",
+    "@langchain/aws": "^1.5.2"
   }
 }
