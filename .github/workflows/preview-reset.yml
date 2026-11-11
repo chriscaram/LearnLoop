@@ -1,0 +1,123 @@
+name: Preview reset
+
+# A ga/* PR closed without merging: redeploy main, switch the branch's flag
+# off and restore the seeded demo data, so the app is back to its baseline.
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      flag_key:
+        description: Flag to switch off (e.g. ga-find_a431764685ac). Empty = every ga-* flag that is on.
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  id-token: write # GitHub OIDC -> AWS
+  contents: read
+  pull-requests: write # PR comments
+  actions: read # failure report: which step failed
+
+concurrency:
+  group: ${{ (github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == false && startsWith(github.head_ref, 'ga/'))) && 'deploy-prod' || format('preview-reset-ignored-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == false && startsWith(github.head_ref, 'ga/'))
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      ref: main
+      environment: preview
+
+  reset:
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment: preview # OIDC subject repo:<repo>:environment:preview
+    env:
+      AWS_REGION: us-east-1
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_REF: ${{ github.head_ref }}
+      INPUT_FLAG_KEY: ${{ inputs.flag_key }}
+      APP_URL: ${{ needs.deploy.outputs.url }}
+      APP_VERSION: ${{ needs.deploy.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Switch the flag off
+        run: |
+          set -euo pipefail
+          if [[ -n "$HEAD_REF" ]]; then
+            keys="ga-${HEAD_REF#ga/}"
+          elif [[ -n "$INPUT_FLAG_KEY" ]]; then
+            keys="$INPUT_FLAG_KEY"
+          else
+            keys="$(npm run -s flag -- list | awk -F'\t' '$1 ~ /^ga-/ && $2 == "on" { print $1 }')"
+          fi
+          for key in $keys; do
+            [[ "$key" =~ ^[a-z][a-z0-9_-]{0,63}$ ]] || { echo "::error::'$key' is not a valid flag key"; exit 1; }
+            npm run -s flag -- "$key" off
+          done
+          echo "${keys:-}" | paste -sd' ' > flags-off.txt
+
+      - name: Restore the demo data
+        run: npm run state:reset
+
+      - name: Report
+        run: |
+          set -euo pipefail
+          flags="$(cat flags-off.txt)"
+          {
+            echo "### Preview reset: the app is back to \`main\`"
+            echo
+            echo "- **App:** $APP_URL (\`main\` at \`$APP_VERSION\`)"
+            echo "- **Flag switched off:** ${flags:+\`$flags\`}${flags:-none was on}"
+            echo "- **Demo data:** restored from the seed (\`npm run state:reset\`), including the learners' inboxes"
+            echo
+            echo "<sub>[Workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)</sub>"
+          } > comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$PR_NUMBER" ]]; then gh pr comment "$PR_NUMBER" --body-file comment.md; fi
+
+  report-failure:
+    needs: [deploy, reset]
+    if: failure()
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Comment the failing step on the PR
+        run: |
+          set -euo pipefail
+          failed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure") | "- job **\(.name)**, step **\([.steps[] | select(.conclusion == "failure") | .name] | join(", ") | if . == "" then "(job setup)" else . end)**"')"
+          {
+            echo "### Preview reset failed: the app may not be back to \`main\`"
+            echo
+            echo "${failed:-"- (could not determine the failing step)"}"
+            echo
+            echo "[Workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+          } > comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then gh pr comment "$PR_NUMBER" --body-file comment.md; fi

@@ -68,11 +68,15 @@ function toResponse({ status, body, cookies }) {
 /**
  * routes: [{ method, path, auth: 'public'|'user'|'staff', handler(req) }]
  * jobs:   { name: async (now) => void } for scheduled (EventBridge) invocations
+ * { listJobs: true } returns { jobs: [<registered job names>] } and does nothing else.
  */
 export function createHandler({ service, routes, jobs = {} }) {
   const table = new Map(routes.map((route) => [routeKey(route), route]));
 
   return async function handler(event, context = {}) {
+    // Deploy tooling asks which scheduled jobs this build registers; nothing else runs.
+    if (event?.listJobs === true) return { jobs: Object.keys(jobs) };
+
     const config = getConfig();
     const base = { service, version: config.version, environment: config.environment };
 

@@ -97,16 +97,18 @@ Everything goes to `us-east-1`. Resources are tagged `Application=learnloop` and
    # if the account already has the GitHub OIDC provider:
    #   ... -c existingOidcProviderArn=arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
    ```
-   The output `DeployRoleArn` is the role GitHub Actions assumes. It trusts only pushes to `main` of that repository.
+   The output `DeployRoleArn` is the role GitHub Actions assumes. It trusts that repository's `main` branch and its `prod` and `preview` environments.
 3. **SES.** Before the first deploy, verify the sender address and your own recipient address in the SES console (the account stays in the SES sandbox). The stack does not create or verify SES identities. It only takes the sender as the `sesSender` parameter. The `@example.com` demo addresses cannot receive mail, so set `emailRecipientOverride` to your verified recipient to receive all demo email there. If SES rejects a message, the notification is still created and the API reports `"email": "failed"`.
-4. **GitHub configuration** (repository environment `prod`), variables only, no secrets: `AWS_DEPLOY_ROLE_ARN`, `SES_SENDER`, and optionally `EMAIL_RECIPIENT_OVERRIDE`.
-5. **Push to `main`.** `.github/workflows/deploy.yml` runs the tests, builds `web`, runs `cdk deploy` with `APP_VERSION` set to the short commit SHA, syncs `web/dist` to the web bucket and invalidates CloudFront. `.github/workflows/ci.yml` runs `npm ci && npm test` on every push and pull request. No long-lived AWS keys are used anywhere.
+4. **GitHub configuration** (repository environments `prod` and `preview`), repository variables only, no secrets: `AWS_DEPLOY_ROLE_ARN`, `SES_SENDER`, and optionally `EMAIL_RECIPIENT_OVERRIDE`.
+5. **Push to `main`.** `.github/workflows/deploy.yml` runs the tests, builds `web`, runs `cdk deploy` with `APP_VERSION` set to the short commit SHA, syncs `web/dist` to the web bucket and invalidates CloudFront (the steps live in the reusable `_deploy.yml`; it can also be started by hand). `.github/workflows/ci.yml` runs `npm ci && npm test` on every push and pull request. No long-lived AWS keys are used anywhere.
 
 CDK stack parameters: `sesSender` and `emailRecipientOverride` (optional).
 
 **Secrets.** CDK creates two Secrets Manager secrets with generated values: `learnloop/prod/jwt-secret` (signs session tokens) and `learnloop/prod/log-pseudonym-salt`. The functions receive the secret names in `JWT_SECRET_PARAMETER` and `LOG_PSEUDONYM_SALT_PARAMETER`. To read the salt: `aws secretsmanager get-secret-value --secret-id learnloop/prod/log-pseudonym-salt --query SecretString --output text`.
 
 **Access logs.** The access-logs bucket has ACLs enabled (`BucketOwnerPreferred`) and SSE-S3 encryption, which is what CloudFront standard logging requires. The distribution logs to that bucket under the prefix `cloudfront/`. The stack outputs `AccessLogsBucketName` and `CloudFrontLogPrefix` name the location.
+
+**Previews of `ga/*` branches.** When a `ga/<id>` pull request gets the `ga-verified` label, `preview.yml` deploys its head commit to `LearnLoopProd`, switches the flag `ga-<id>` on, runs once every scheduled job the branch registers that `main` does not (found by invoking each function with `{"listJobs": true}`; `node tools/ops/src/list-jobs.js <checkout>` gives the same list from a checkout), and comments the result on the PR. Closing such a PR without merging runs `preview-reset.yml`: it redeploys `main`, switches the flag off and runs `npm run state:reset`. Both can be started by hand from the Actions tab. All deploying workflows share the `deploy-prod` concurrency group.
 
 **Offline tests.** `npm test` synthesizes the stacks with asset bundling disabled. It needs no AWS access, no Docker and no esbuild. Real deploys bundle each function locally with esbuild (an `infra` devDependency).
 

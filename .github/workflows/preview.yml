@@ -1,0 +1,222 @@
+name: Preview
+
+# A ga/<id> PR labelled `ga-verified` is deployed to LearnLoopProd, its flag
+# ga-<id> is switched on, every scheduled job the branch registers that main
+# does not is run once, and the result is commented on the PR.
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Number of an open ga/* pull request to preview
+        required: true
+        type: string
+
+permissions:
+  id-token: write # GitHub OIDC -> AWS
+  contents: read
+  pull-requests: write # PR comments
+  actions: read # failure report: which step failed
+
+# Only real preview runs join the deploy queue; other label events get a
+# throw-away group so they can never displace a queued deploy.
+concurrency:
+  group: ${{ (github.event_name == 'workflow_dispatch' || (github.event.label.name == 'ga-verified' && startsWith(github.head_ref, 'ga/'))) && 'deploy-prod' || format('preview-ignored-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    if: github.event_name == 'workflow_dispatch' || (github.event.label.name == 'ga-verified' && startsWith(github.head_ref, 'ga/'))
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      head_ref: ${{ steps.pr.outputs.head_ref }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      flag_key: ${{ steps.pr.outputs.flag_key }}
+    steps:
+      - name: Resolve pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::pr_number must be a number, got '$PR_NUMBER'"; exit 1; }
+          gh pr view "$PR_NUMBER" --json headRefName,headRefOid,state,isCrossRepository > pr.json
+          HEAD_REF="$(jq -r .headRefName pr.json)"
+          HEAD_SHA="$(jq -r .headRefOid pr.json)"
+          [[ "$HEAD_REF" == ga/* ]] || { echo "::error::PR #$PR_NUMBER is from '$HEAD_REF', not a ga/* branch"; exit 1; }
+          [[ "$(jq -r .state pr.json)" == OPEN ]] || { echo "::error::PR #$PR_NUMBER is not open"; exit 1; }
+          [[ "$(jq -r .isCrossRepository pr.json)" == false ]] || { echo "::error::PR #$PR_NUMBER comes from a fork"; exit 1; }
+          FLAG_KEY="ga-${HEAD_REF#ga/}"
+          [[ "$FLAG_KEY" =~ ^[a-z][a-z0-9_-]{0,63}$ ]] || { echo "::error::'$FLAG_KEY' is not a valid flag key"; exit 1; }
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "head_ref=$HEAD_REF"
+            echo "head_sha=$HEAD_SHA"
+            echo "flag_key=$FLAG_KEY"
+          } >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: resolve
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      ref: ${{ needs.resolve.outputs.head_sha }}
+      environment: preview
+
+  activate:
+    needs: [resolve, deploy]
+    runs-on: ubuntu-latest
+    environment: preview # OIDC subject repo:<repo>:environment:preview
+    env:
+      AWS_REGION: us-east-1
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+      HEAD_REF: ${{ needs.resolve.outputs.head_ref }}
+      HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+      FLAG_KEY: ${{ needs.resolve.outputs.flag_key }}
+      APP_URL: ${{ needs.deploy.outputs.url }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+
+      - name: Check out the branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.head_sha }}
+          path: branch
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            main/package-lock.json
+            branch/package-lock.json
+
+      - name: Install (main tooling)
+        working-directory: main
+        run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Switch the flag on
+        working-directory: main
+        run: npm run flag -- "$FLAG_KEY" on
+
+      - name: Discover the jobs main registers
+        run: node main/tools/ops/src/list-jobs.js main | tee main-jobs.json
+
+      - name: Discover the jobs the branch registers
+        run: |
+          set -euo pipefail
+          echo '{}' > branch-jobs.json
+          fallback=false
+          for dir in branch/services/*/; do
+            svc="$(basename "$dir")"
+            [[ -f "$dir/src/handler.js" ]] || continue
+            fn="learnloop-prod-$svc"
+            if ! aws lambda invoke --function-name "$fn" --cli-binary-format raw-in-base64-out \
+                 --payload '{"listJobs":true}' "list-$svc.json" > /dev/null; then
+              echo "::warning::could not invoke $fn"; fallback=true; continue
+            fi
+            if jq -e '.jobs | type == "array"' "list-$svc.json" > /dev/null; then
+              jq --arg s "$svc" --slurpfile r "list-$svc.json" '.[$s] = $r[0].jobs' branch-jobs.json > tmp.json && mv tmp.json branch-jobs.json
+            else
+              echo "::notice::$fn does not answer listJobs (branch predates it)"; fallback=true
+            fi
+          done
+          echo "source=lambda" > jobs-source.txt
+          if [[ "$fallback" == true ]]; then
+            # Branch cut before listJobs existed: read its registrations from the checkout instead.
+            (cd branch && npm ci)
+            node main/tools/ops/src/list-jobs.js branch > branch-jobs.json
+            echo "source=checkout" > jobs-source.txt
+          fi
+          cat branch-jobs.json
+
+      - name: Run the new jobs once
+        env:
+          AWS_MAX_ATTEMPTS: '1' # never retry: each job runs exactly once
+        run: |
+          set -euo pipefail
+          jq -n --slurpfile b branch-jobs.json --slurpfile m main-jobs.json \
+            '[$b[0] | to_entries[] | .key as $s | .value[] | select(. as $j | (($m[0][$s] // []) | index($j)) | not) | {service: $s, job: .}]' > new-jobs.json
+          echo '[]' > results.json
+          while read -r entry; do
+            svc="$(jq -r .service <<< "$entry")"; job="$(jq -r .job <<< "$entry")"
+            payload="$(jq -cn --arg j "$job" '{job: $j}')"
+            echo "invoking learnloop-prod-$svc with $payload"
+            if aws lambda invoke --function-name "learnloop-prod-$svc" --cli-binary-format raw-in-base64-out \
+                 --cli-read-timeout 120 --payload "$payload" out.json > meta.json 2> err.txt; then
+              jq --argjson e "$entry" --slurpfile meta meta.json --rawfile out out.json \
+                '. + [$e + {statusCode: $meta[0].StatusCode, functionError: ($meta[0].FunctionError // null), response: ($out | .[0:500])}]' results.json > tmp.json
+            else
+              jq --argjson e "$entry" --rawfile err err.txt \
+                '. + [$e + {statusCode: null, functionError: "InvokeFailed", response: ($err | .[0:500])}]' results.json > tmp.json
+            fi
+            mv tmp.json results.json
+          done < <(jq -c '.[]' new-jobs.json)
+          cat results.json
+
+      - name: Comment on the PR
+        run: |
+          set -euo pipefail
+          {
+            echo "### Preview deployed"
+            echo
+            echo "- **App:** $APP_URL"
+            echo "- **Branch:** \`$HEAD_REF\` at \`${HEAD_SHA:0:7}\`"
+            echo "- **Flag switched on:** \`$FLAG_KEY\`"
+            echo
+            if [[ "$(jq length results.json)" == 0 ]]; then
+              echo "No new scheduled jobs: the branch registers no job that \`main\` does not."
+            else
+              echo "**New scheduled jobs, run once** (job list from the $(cut -d= -f2 jobs-source.txt)):"
+              echo
+              echo "| Function | Job | Status | Function error | Response |"
+              echo "|---|---|---|---|---|"
+              jq -r '.[] | "| learnloop-prod-\(.service) | `\(.job)` | \(.statusCode // "–") | \(if .functionError then "❌ \(.functionError)" else "✅ none" end) | `\(.response | gsub("[\\n|`]"; " "))` |"' results.json
+            fi
+            echo
+            echo "Sign in as ana.moreno@example.com to see the change."
+            echo
+            echo "<sub>[Workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)</sub>"
+          } > comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+          gh pr comment "$PR_NUMBER" --body-file comment.md
+
+  report-failure:
+    needs: [resolve, deploy, activate]
+    if: failure()
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+    steps:
+      - name: Comment the failing step on the PR
+        run: |
+          set -euo pipefail
+          failed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" \
+            --jq '.jobs[] | select(.conclusion == "failure") | "- job **\(.name)**, step **\([.steps[] | select(.conclusion == "failure") | .name] | join(", ") | if . == "" then "(job setup)" else . end)**"')"
+          {
+            echo "### Preview failed"
+            echo
+            echo "${failed:-"- (could not determine the failing step)"}"
+            echo
+            echo "[Workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+          } > comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then gh pr comment "$PR_NUMBER" --body-file comment.md; fi

@@ -41,6 +41,8 @@ test('setFlag writes the map and is visible immediately', async () => {
   assert.deepEqual(stored.new_catalog_filters, { enabled: false });
   assert.deepEqual(stored.other, { enabled: false });
   await assert.rejects(setFlag('Bad Key', true), TypeError);
+  // per-branch flags: ga/<id> -> ga-<id>
+  assert.deepEqual(await setFlag('ga-find_a431764685ac', true), { key: 'ga-find_a431764685ac', enabled: true });
 });
 
 test('listFlags includes known flags with descriptions', async () => {

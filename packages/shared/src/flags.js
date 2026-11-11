@@ -55,7 +55,7 @@ export async function listFlags() {
 }
 
 export async function setFlag(flagKey, enabled) {
-  if (!/^[a-z][a-z0-9_]{0,63}$/.test(flagKey)) throw new TypeError(`invalid flag key: ${flagKey}`);
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(flagKey)) throw new TypeError(`invalid flag key: ${flagKey}`);
   let map = {};
   try {
     map = { ...(await readFlagMap({ fresh: true })) };

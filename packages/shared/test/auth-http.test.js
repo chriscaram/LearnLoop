@@ -65,6 +65,18 @@ test('scheduled jobs run with a system context', async () => {
   env.logs.restore();
 });
 
+test('listJobs returns the registered job names and runs nothing', async () => {
+  const env = setupTestEnvironment();
+  let ran = false;
+  const jobs = { renew: async () => { ran = true; }, nudge: async () => { ran = true; } };
+  const handler = createHandler({ service: 'billing', routes, jobs });
+  assert.deepEqual(await handler({ listJobs: true }), { jobs: ['renew', 'nudge'] });
+  assert.deepEqual(await createHandler({ service: 'catalog', routes })({ listJobs: true }), { jobs: [] });
+  env.logs.restore();
+  assert.equal(ran, false);
+  assert.equal(env.logs.records.length, 0);
+});
+
 test('a handler that runs past the Lambda deadline still gets a 504 and a request line', async () => {
   const env = setupTestEnvironment();
   const slow = [{ method: 'GET', path: '/api/slow', auth: 'public', handler: () => new Promise((r) => setTimeout(() => r(ok({})), 5_000)) }];

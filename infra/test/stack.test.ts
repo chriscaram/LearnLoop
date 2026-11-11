@@ -166,6 +166,15 @@ test('GitHub OIDC deploy role is limited to the main branch of one repository', 
   const t = Template.fromStack(stack).toJSON();
   const role = Object.values(t.Resources as Record<string, any>).find((r) => r.Type === 'AWS::IAM::Role');
   const condition = role.Properties.AssumeRolePolicyDocument.Statement[0].Condition;
-  assert.equal(condition.StringLike['token.actions.githubusercontent.com:sub'], 'repo:example/learnloop:ref:refs/heads/main');
+  assert.equal(condition.StringEquals['token.actions.githubusercontent.com:aud'], 'sts.amazonaws.com');
+  assert.deepEqual(condition.StringLike['token.actions.githubusercontent.com:sub'], [
+    'repo:example/learnloop:ref:refs/heads/main',
+    'repo:example/learnloop:environment:prod',
+    'repo:example/learnloop:environment:preview',
+  ]);
+  assert.ok(t.Outputs.DeployRoleArn);
+  const policy = Object.values(t.Resources as Record<string, any>).find((r) => r.Type === 'AWS::IAM::Policy');
+  const actions = policy.Properties.PolicyDocument.Statement.flatMap((s: any) => [s.Action].flat());
+  for (const action of ['ssm:GetParameter', 'ssm:PutParameter', 'lambda:InvokeFunction', 's3:PutObject']) assert.ok(actions.includes(action), action);
   assert.equal(role.Properties.RoleName, 'learnloop-github-deploy');
 });

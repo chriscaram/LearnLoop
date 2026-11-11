@@ -21,11 +21,17 @@ export class GithubOidcStack extends Stack {
 
     const role = new iam.Role(this, 'DeployRole', {
       roleName: 'learnloop-github-deploy',
-      description: 'Assumed by GitHub Actions on pushes to main to deploy LearnLoop',
+      description: 'Assumed by GitHub Actions (main, prod and preview environments) to deploy LearnLoop',
       maxSessionDuration: Duration.hours(1),
       assumedBy: new iam.WebIdentityPrincipal(providerArn, {
         StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
-        StringLike: { 'token.actions.githubusercontent.com:sub': `repo:${props.githubRepo}:ref:refs/heads/main` },
+        StringLike: {
+          'token.actions.githubusercontent.com:sub': [
+            `repo:${props.githubRepo}:ref:refs/heads/main`,
+            `repo:${props.githubRepo}:environment:prod`,
+            `repo:${props.githubRepo}:environment:preview`,
+          ],
+        },
       }),
     });
 
@@ -42,6 +48,20 @@ export class GithubOidcStack extends Stack {
     role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:ListBucket'], resources: [webBucketArn] }));
     role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:PutObject', 's3:DeleteObject', 's3:GetObject'], resources: [`${webBucketArn}/*`] }));
     role.addToPolicy(new iam.PolicyStatement({ actions: ['cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation'], resources: ['*'] }));
+
+    // preview.yml / preview-reset.yml: feature flags, one-off job runs, demo-data reset
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter', 'ssm:PutParameter'],
+      resources: [`arn:${Aws.PARTITION}:ssm:${Aws.REGION}:${Aws.ACCOUNT_ID}:parameter/learnloop/prod/feature-flags`],
+    }));
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [`arn:${Aws.PARTITION}:lambda:${Aws.REGION}:${Aws.ACCOUNT_ID}:function:learnloop-prod-*`],
+    }));
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ['s3:PutObject'],
+      resources: [`arn:${Aws.PARTITION}:s3:::learnloop-prod-state-${Aws.ACCOUNT_ID}/*`],
+    }));
 
     new CfnOutput(this, 'DeployRoleArn', { value: role.roleArn });
   }
