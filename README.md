@@ -94,6 +94,8 @@ Everything goes to `us-east-1`. Resources are tagged `Application=learnloop` and
    ```bash
    cd infra
    npx cdk --app "npx tsx bin/github-oidc.ts" deploy -c githubRepo=<owner>/<repo>
+   # if GitHub issues id-based subjects (repo:<owner>@<ownerId>/<repo>@<repoId>:...):
+   #   ... -c githubOwnerId=<numeric owner id> -c githubRepoId=<numeric repo id>
    # if the account already has the GitHub OIDC provider:
    #   ... -c existingOidcProviderArn=arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
    ```

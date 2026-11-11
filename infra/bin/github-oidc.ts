@@ -1,4 +1,5 @@
-// npx cdk --app "npx tsx bin/github-oidc.ts" deploy -c githubRepo=<owner>/<repo>
+// npx cdk --app "npx tsx bin/github-oidc.ts" deploy -c githubRepo=<owner>/<repo> \
+//   [-c githubOwnerId=<numeric id> -c githubRepoId=<numeric id>]
 import { App, Tags } from 'aws-cdk-lib';
 import { GithubOidcStack } from '../lib/github-oidc-stack.js';
 
@@ -12,5 +13,7 @@ if (!githubRepo) throw new Error('pass -c githubRepo=<owner>/<repo>');
 new GithubOidcStack(app, 'LearnLoopGithubOidc', {
   env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: 'us-east-1' },
   githubRepo,
+  githubOwnerId: app.node.tryGetContext('githubOwnerId'),
+  githubRepoId: app.node.tryGetContext('githubRepoId'),
   existingProviderArn: app.node.tryGetContext('existingOidcProviderArn'),
 });

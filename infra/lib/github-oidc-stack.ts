@@ -5,6 +5,13 @@ import type { Construct } from 'constructs';
 export interface GithubOidcStackProps extends StackProps {
   /** "owner/repo" */
   githubRepo: string;
+  /**
+   * Numeric GitHub ids of the owner and the repository. GitHub may issue OIDC
+   * subjects in the immutable form repo:<owner>@<ownerId>/<repo>@<repoId>:...;
+   * when both ids are given, that form is trusted as well.
+   */
+  githubOwnerId?: string;
+  githubRepoId?: string;
   /** Reuse an existing token.actions.githubusercontent.com provider in the account. */
   existingProviderArn?: string;
 }
@@ -19,6 +26,15 @@ export class GithubOidcStack extends Stack {
       clientIds: ['sts.amazonaws.com'],
     }).oidcProviderArn;
 
+    const [owner, repo] = props.githubRepo.split('/');
+    const repoForms = [props.githubRepo];
+    if (props.githubOwnerId && props.githubRepoId) repoForms.push(`${owner}@${props.githubOwnerId}/${repo}@${props.githubRepoId}`);
+    const subjects = repoForms.flatMap((r) => [
+      `repo:${r}:ref:refs/heads/main`,
+      `repo:${r}:environment:prod`,
+      `repo:${r}:environment:preview`,
+    ]);
+
     const role = new iam.Role(this, 'DeployRole', {
       roleName: 'learnloop-github-deploy',
       description: 'Assumed by GitHub Actions (main, prod and preview environments) to deploy LearnLoop',
@@ -26,11 +42,7 @@ export class GithubOidcStack extends Stack {
       assumedBy: new iam.WebIdentityPrincipal(providerArn, {
         StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
         StringLike: {
-          'token.actions.githubusercontent.com:sub': [
-            `repo:${props.githubRepo}:ref:refs/heads/main`,
-            `repo:${props.githubRepo}:environment:prod`,
-            `repo:${props.githubRepo}:environment:preview`,
-          ],
+          'token.actions.githubusercontent.com:sub': subjects,
         },
       }),
     });
