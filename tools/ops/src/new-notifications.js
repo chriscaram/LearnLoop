@@ -3,7 +3,7 @@
 // Lists the notifications created at or after <since> in the deployed state
 // bucket, with the recipient's demo email, so an operator can see whom a job
 // messaged and sign in as one of them. Runs with the operator's AWS
-// credentials; the preview workflow only uses the counts (--json).
+// credentials. The preview workflow uses --json and puts only the names in the PR comment.
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { pathToFileURL } from 'node:url';
 import { region, stateBucket } from './stack.js';

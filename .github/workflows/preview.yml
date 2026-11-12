@@ -172,14 +172,14 @@ jobs:
           done < <(jq -c '.[]' new-jobs.json)
           cat results.json
 
-      # Counts only: who received the notifications is never written to GitHub.
-      - name: Count the notifications the jobs created
+      # Demo data only: the comment names the recipients (names, never emails).
+      - name: Find the learners the jobs messaged
         run: |
           set -euo pipefail
-          if [[ "$(jq length results.json)" == 0 ]]; then echo '{"total":0,"agent":0}' > counts.json; exit 0; fi
+          if [[ "$(jq length results.json)" == 0 ]]; then echo '{"total":0,"agent":0,"names":[]}' > recipients.json; exit 0; fi
           node main/tools/ops/src/new-notifications.js "$(cat since.txt)" --json \
-            | jq '{total: length, agent: (map(select(.appliedByAgent)) | length)}' > counts.json
-          cat counts.json
+            | jq '{total: length, agent: (map(select(.appliedByAgent)) | length), names: (map(.name // "(unknown learner)") | unique)}' > recipients.json
+          jq '{total, agent, learners: (.names | length)}' recipients.json
 
       - name: Comment on the PR
         run: |
@@ -201,16 +201,14 @@ jobs:
               jq -r '.[] | "| learnloop-prod-\(.service) | `\(.job)` | \(.statusCode // "–") | \(if .functionError then "❌ \(.functionError)" else "✅ none" end) | `\(.response | gsub("[\\n|`]"; " "))` |"' results.json
             fi
             echo
-            total="$(jq .total counts.json)"
             if [[ "$(jq length results.json)" != 0 ]]; then
-              echo "**Notifications created during the run:** $total ($(jq .agent counts.json) marked *Applied by agent*)."
-              echo
-              if [[ "$total" -gt 0 ]]; then
-                echo "To see who received them, run this from a checkout of \`main\` with AWS access, then sign in as one of those learners and open **Notifications**:"
+              learners="$(jq '.names | length' recipients.json)"
+              if [[ "$learners" -gt 0 ]]; then
+                echo "**Learners who received a notification ($learners):** $(jq -r '.names[0:20] | join(", ")' recipients.json)$( [[ "$learners" -gt 20 ]] && echo " and $((learners - 20)) more")."
                 echo
-                echo '```'
-                echo "npm run notifications:since -- $(cat since.txt)"
-                echo '```'
+                echo "$(jq .agent recipients.json) of the $(jq .total recipients.json) notifications are marked *Applied by agent*. Sign in as one of these learners and open **Notifications** to see the change."
+              else
+                echo "The jobs created no notifications during this run."
               fi
             fi
             echo
