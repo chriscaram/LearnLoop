@@ -27,12 +27,16 @@ export function ok(body, extra = {}) {
 /** Respond this long before the Lambda deadline so the request line is always written. */
 export const DEADLINE_MARGIN_MS = 500;
 
+/** API requests never run longer than this, even on a function with a longer timeout for its jobs. */
+export const REQUEST_TIMEOUT_MS = 10_000;
+
 function withDeadline(promise, context) {
   const remaining = typeof context.getRemainingTimeInMillis === 'function' ? context.getRemainingTimeInMillis() : null;
   if (remaining === null) return promise;
+  const budget = Math.min(remaining, REQUEST_TIMEOUT_MS);
   let timer;
   const deadline = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new HttpError(504, 'timeout')), Math.max(0, remaining - DEADLINE_MARGIN_MS));
+    timer = setTimeout(() => reject(new HttpError(504, 'timeout')), Math.max(0, budget - DEADLINE_MARGIN_MS));
   });
   return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }

@@ -1,7 +1,7 @@
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { issueSessionToken, parseCookies, signJwt, verifyJwt } from '../src/auth.js';
-import { HttpError, createHandler, ok } from '../src/http.js';
+import { DEADLINE_MARGIN_MS, HttpError, REQUEST_TIMEOUT_MS, createHandler, ok } from '../src/http.js';
 import { TEST_JWT_SECRET, apiEvent, setupTestEnvironment, testSessionCookie } from '../src/testing.js';
 
 test('JWT round trip, tamper and expiry', () => {
@@ -87,4 +87,24 @@ test('a handler that runs past the Lambda deadline still gets a 504 and a reques
   const request = env.logs.records.filter((r) => r.kind === 'request');
   assert.equal(request.length, 1);
   assert.equal(request[0]['http.status_code'], 504);
+});
+
+test('API requests keep the 10 s deadline on a function with a longer (job) timeout', async () => {
+  const env = setupTestEnvironment();
+  const hang = [{ method: 'GET', path: '/api/hang', auth: 'public', handler: () => new Promise(() => {}) }];
+  const handler = createHandler({ service: 'learning', routes: hang });
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    let settled = false;
+    const pending = handler(apiEvent('GET /api/hang'), { getRemainingTimeInMillis: () => 120_000 }).finally(() => { settled = true; });
+    for (let i = 0; i < 20; i += 1) await new Promise((r) => setImmediate(r));
+    mock.timers.tick(REQUEST_TIMEOUT_MS - DEADLINE_MARGIN_MS - 1);
+    await new Promise((r) => setImmediate(r));
+    assert.equal(settled, false);
+    mock.timers.tick(1);
+    assert.equal((await pending).statusCode, 504);
+  } finally {
+    mock.timers.reset();
+    env.logs.restore();
+  }
 });

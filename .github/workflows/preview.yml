@@ -154,12 +154,14 @@ jobs:
           jq -n --slurpfile b branch-jobs.json --slurpfile m main-jobs.json \
             '[$b[0] | to_entries[] | .key as $s | .value[] | select(. as $j | (($m[0][$s] // []) | index($j)) | not) | {service: $s, job: .}]' > new-jobs.json
           echo '[]' > results.json
+          # Start of the job window (5 s early for clock skew): notifications created after it are the jobs' effect.
+          date -u -d '-5 seconds' +%Y-%m-%dT%H:%M:%S.000Z > since.txt
           while read -r entry; do
             svc="$(jq -r .service <<< "$entry")"; job="$(jq -r .job <<< "$entry")"
             payload="$(jq -cn --arg j "$job" '{job: $j}')"
             echo "invoking learnloop-prod-$svc with $payload"
             if aws lambda invoke --function-name "learnloop-prod-$svc" --cli-binary-format raw-in-base64-out \
-                 --cli-read-timeout 120 --payload "$payload" out.json > meta.json 2> err.txt; then
+                 --cli-read-timeout 180 --payload "$payload" out.json > meta.json 2> err.txt; then
               jq --argjson e "$entry" --slurpfile meta meta.json --rawfile out out.json \
                 '. + [$e + {statusCode: $meta[0].StatusCode, functionError: ($meta[0].FunctionError // null), response: ($out | .[0:500])}]' results.json > tmp.json
             else
@@ -169,6 +171,15 @@ jobs:
             mv tmp.json results.json
           done < <(jq -c '.[]' new-jobs.json)
           cat results.json
+
+      # Counts only: who received the notifications is never written to GitHub.
+      - name: Count the notifications the jobs created
+        run: |
+          set -euo pipefail
+          if [[ "$(jq length results.json)" == 0 ]]; then echo '{"total":0,"agent":0}' > counts.json; exit 0; fi
+          node main/tools/ops/src/new-notifications.js "$(cat since.txt)" --json \
+            | jq '{total: length, agent: (map(select(.appliedByAgent)) | length)}' > counts.json
+          cat counts.json
 
       - name: Comment on the PR
         run: |
@@ -190,7 +201,18 @@ jobs:
               jq -r '.[] | "| learnloop-prod-\(.service) | `\(.job)` | \(.statusCode // "–") | \(if .functionError then "❌ \(.functionError)" else "✅ none" end) | `\(.response | gsub("[\\n|`]"; " "))` |"' results.json
             fi
             echo
-            echo "Sign in as ana.moreno@example.com to see the change."
+            total="$(jq .total counts.json)"
+            if [[ "$(jq length results.json)" != 0 ]]; then
+              echo "**Notifications created during the run:** $total ($(jq .agent counts.json) marked *Applied by agent*)."
+              echo
+              if [[ "$total" -gt 0 ]]; then
+                echo "To see who received them, run this from a checkout of \`main\` with AWS access, then sign in as one of those learners and open **Notifications**:"
+                echo
+                echo '```'
+                echo "npm run notifications:since -- $(cat since.txt)"
+                echo '```'
+              fi
+            fi
             echo
             echo "<sub>[Workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)</sub>"
           } > comment.md

@@ -31,7 +31,7 @@ test('one Lambda per service with the required runtime settings and environment'
     assert.equal(p.Runtime, 'nodejs22.x');
     assert.deepEqual(p.Architectures, ['arm64']);
     assert.equal(p.MemorySize, 512);
-    assert.equal(p.Timeout, 10);
+    assert.equal(p.Timeout, p.FunctionName === 'learnloop-prod-learning' ? 120 : 10);
     assert.equal(p.LoggingConfig.LogFormat, 'JSON');
     for (const key of ['APP_ENV', 'APP_VERSION', 'STATE_BUCKET', 'FLAGS_PARAMETER', 'LOG_PSEUDONYM_SALT_PARAMETER']) {
       assert.ok(key in p.Environment.Variables, `${p.FunctionName} ${key}`);
@@ -175,7 +175,7 @@ test('GitHub OIDC deploy role is limited to the main branch of one repository', 
   assert.ok(t.Outputs.DeployRoleArn);
   const policy = Object.values(t.Resources as Record<string, any>).find((r) => r.Type === 'AWS::IAM::Policy');
   const actions = policy.Properties.PolicyDocument.Statement.flatMap((s: any) => [s.Action].flat());
-  for (const action of ['ssm:GetParameter', 'ssm:PutParameter', 'lambda:InvokeFunction', 's3:PutObject']) assert.ok(actions.includes(action), action);
+  for (const action of ['ssm:GetParameter', 'ssm:PutParameter', 'lambda:InvokeFunction', 's3:PutObject', 's3:GetObject']) assert.ok(actions.includes(action), action);
 
   const withIds = new GithubOidcStack(new App(), 'OidcIds', {
     env: { account: '123456789012', region: 'us-east-1' }, githubRepo: 'example/learnloop', githubOwnerId: '111', githubRepoId: '222',

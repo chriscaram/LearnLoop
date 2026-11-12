@@ -19,6 +19,7 @@
     "dev": "node tools/dev/src/dev.js",
     "build:web": "npm run build -w web",
     "state:reset": "node tools/ops/src/state-reset.js",
+    "notifications:since": "node tools/ops/src/new-notifications.js",
     "flag": "node packages/shared/bin/flag.js"
   }
 }

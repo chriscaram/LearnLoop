@@ -21,6 +21,13 @@ import { REPO_ROOT, SERVICES, serviceEntry } from './services.js';
 const PREFIX = 'learnloop-prod';
 const RETENTION = logs.RetentionDays.THREE_MONTHS; // 90 days
 const LOG_BUCKET_DAYS = 120;
+/**
+ * Function timeouts. API requests are cut at 10 s by the shared handler
+ * whatever the function timeout is; a longer timeout only gives scheduled
+ * jobs on that function more time (learning: re-engagement nudges).
+ */
+const DEFAULT_TIMEOUT_SECONDS = 10;
+export const FUNCTION_TIMEOUT_SECONDS: Record<string, number> = { learning: 120 };
 export const CLOUDFRONT_LOG_PREFIX = 'cloudfront/';
 
 export const PARAMETER_NAMES = {
@@ -155,7 +162,7 @@ export class LearnLoopStack extends Stack {
         runtime: lambda.Runtime.NODEJS_22_X,
         architecture: lambda.Architecture.ARM_64,
         memorySize: 512,
-        timeout: Duration.seconds(10),
+        timeout: Duration.seconds(FUNCTION_TIMEOUT_SECONDS[service] ?? DEFAULT_TIMEOUT_SECONDS),
         role,
         logGroup,
         loggingFormat: lambda.LoggingFormat.JSON,

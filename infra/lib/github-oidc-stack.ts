@@ -61,7 +61,7 @@ export class GithubOidcStack extends Stack {
     role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:PutObject', 's3:DeleteObject', 's3:GetObject'], resources: [`${webBucketArn}/*`] }));
     role.addToPolicy(new iam.PolicyStatement({ actions: ['cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation'], resources: ['*'] }));
 
-    // preview.yml / preview-reset.yml: feature flags, one-off job runs, demo-data reset
+    // preview.yml / preview-reset.yml: feature flags, one-off job runs, demo-data reset and read-back
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter', 'ssm:PutParameter'],
       resources: [`arn:${Aws.PARTITION}:ssm:${Aws.REGION}:${Aws.ACCOUNT_ID}:parameter/learnloop/prod/feature-flags`],
@@ -70,8 +70,9 @@ export class GithubOidcStack extends Stack {
       actions: ['lambda:InvokeFunction'],
       resources: [`arn:${Aws.PARTITION}:lambda:${Aws.REGION}:${Aws.ACCOUNT_ID}:function:learnloop-prod-*`],
     }));
+    // s3:GetObject: preview.yml names the learners a job messaged (tools/ops new-notifications.js)
     role.addToPolicy(new iam.PolicyStatement({
-      actions: ['s3:PutObject'],
+      actions: ['s3:PutObject', 's3:GetObject'],
       resources: [`arn:${Aws.PARTITION}:s3:::learnloop-prod-state-${Aws.ACCOUNT_ID}/*`],
     }));
 
