@@ -7,7 +7,7 @@ export const NOTIFICATION_TYPES = Object.freeze(['welcome', 'payment_receipt', '
 
 export const newNotificationId = () => `ntf_${randomBytes(6).toString('hex')}`;
 
-export async function createNotification(userId, { type, title, body, link = null }, now = new Date()) {
+export async function createNotification(userId, { type, title, body, link = null, appliedByAgent = false }, now = new Date()) {
   if (!NOTIFICATION_TYPES.includes(type)) throw new TypeError(`unknown notification type: ${type}`);
   const notification = await insertNotification({
     id: newNotificationId(),
@@ -18,6 +18,7 @@ export async function createNotification(userId, { type, title, body, link = nul
     link,
     created_at: now.toISOString(),
     read_at: null,
+    applied_by_agent: appliedByAgent === true,
   });
   logEvent({ event: 'notification_created', entityType: 'notification', entityId: notification.id, actorType: 'system' });
   return notification;
@@ -42,5 +43,5 @@ export async function markRead(userId, notificationId, now = new Date()) {
 }
 
 export function toPublicNotification(n) {
-  return { id: n.id, type: n.type, title: n.title, body: n.body, link: n.link, createdAt: n.created_at, read: Boolean(n.read_at) };
+  return { id: n.id, type: n.type, title: n.title, body: n.body, link: n.link, createdAt: n.created_at, read: Boolean(n.read_at), appliedByAgent: n.applied_by_agent === true };
 }

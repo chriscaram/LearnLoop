@@ -30,6 +30,7 @@ export function NotificationsPage() {
               <h2 className="h3">{n.title}</h2>
               <span className="muted small">{formatDate(n.createdAt)}</span>
             </div>
+            {n.appliedByAgent && <p className="muted small">Applied by agent</p>}
             <p>{n.body}</p>
             <div className="row">
               {n.link && n.link !== '/notifications' && <Link to={n.link} onClick={() => !n.read && markRead(n.id)}>Open</Link>}
