@@ -34,6 +34,8 @@ jobs:
       pr_number: ${{ steps.pr.outputs.pr_number }}
       head_ref: ${{ steps.pr.outputs.head_ref }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
+      merge_sha: ${{ steps.pr.outputs.merge_sha }}
+      mergeable: ${{ steps.pr.outputs.mergeable }}
       flag_key: ${{ steps.pr.outputs.flag_key }}
     steps:
       - name: Resolve pull request
@@ -45,26 +47,69 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::pr_number must be a number, got '$PR_NUMBER'"; exit 1; }
-          gh pr view "$PR_NUMBER" --json headRefName,headRefOid,state,isCrossRepository > pr.json
-          HEAD_REF="$(jq -r .headRefName pr.json)"
-          HEAD_SHA="$(jq -r .headRefOid pr.json)"
+          # GitHub computes mergeability in the background: null means "not known yet".
+          for attempt in $(seq 1 10); do
+            gh api "repos/$GH_REPO/pulls/$PR_NUMBER" > pr.json
+            [[ "$(jq -r .mergeable pr.json)" != null ]] && break
+            echo "mergeability of PR #$PR_NUMBER not computed yet (attempt $attempt)"; sleep 6
+          done
+          HEAD_REF="$(jq -r .head.ref pr.json)"
+          HEAD_SHA="$(jq -r .head.sha pr.json)"
+          MERGEABLE="$(jq -r .mergeable pr.json)"
           [[ "$HEAD_REF" == ga/* ]] || { echo "::error::PR #$PR_NUMBER is from '$HEAD_REF', not a ga/* branch"; exit 1; }
-          [[ "$(jq -r .state pr.json)" == OPEN ]] || { echo "::error::PR #$PR_NUMBER is not open"; exit 1; }
-          [[ "$(jq -r .isCrossRepository pr.json)" == false ]] || { echo "::error::PR #$PR_NUMBER comes from a fork"; exit 1; }
+          [[ "$(jq -r .state pr.json)" == open ]] || { echo "::error::PR #$PR_NUMBER is not open"; exit 1; }
+          [[ "$(jq -r '.head.repo.full_name // ""' pr.json)" == "$GH_REPO" ]] || { echo "::error::PR #$PR_NUMBER comes from a fork"; exit 1; }
           FLAG_KEY="ga-${HEAD_REF#ga/}"
           [[ "$FLAG_KEY" =~ ^[a-z][a-z0-9_-]{0,63}$ ]] || { echo "::error::'$FLAG_KEY' is not a valid flag key"; exit 1; }
+          MERGE_SHA=""
+          case "$MERGEABLE" in
+            true)
+              # Deploy refs/pull/<n>/merge (current main with the PR applied), pinned to its commit
+              # so the deploy and the later checkout use the same code even if main moves meanwhile.
+              MERGE_SHA="$(gh api "repos/$GH_REPO/git/ref/pull/$PR_NUMBER/merge" --jq .object.sha)"
+              [[ "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::refs/pull/$PR_NUMBER/merge not found"; exit 1; } ;;
+            false) echo "::warning::PR #$PR_NUMBER conflicts with main: not deploying" ;;
+            *) echo "::error::GitHub has not computed whether PR #$PR_NUMBER can be merged; run the preview again"; exit 1 ;;
+          esac
           {
             echo "pr_number=$PR_NUMBER"
             echo "head_ref=$HEAD_REF"
             echo "head_sha=$HEAD_SHA"
+            echo "merge_sha=$MERGE_SHA"
+            echo "mergeable=$MERGEABLE"
             echo "flag_key=$FLAG_KEY"
           } >> "$GITHUB_OUTPUT"
 
+  conflict:
+    needs: resolve
+    if: needs.resolve.outputs.mergeable == 'false'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+      HEAD_REF: ${{ needs.resolve.outputs.head_ref }}
+      HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+    steps:
+      - name: Comment that the PR conflicts with main
+        run: |
+          set -euo pipefail
+          {
+            echo "### Preview not deployed: conflicts with \`main\`"
+            echo
+            echo "\`$HEAD_REF\` at \`${HEAD_SHA:0:7}\` cannot be merged into the current \`main\` without conflicts, so nothing was deployed and no flag was changed. Update the branch from \`main\` and add the \`ga-verified\` label again (or run the preview by hand)."
+            echo
+            echo "<sub>[Workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)</sub>"
+          } > comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+          gh pr comment "$PR_NUMBER" --body-file comment.md
+
   deploy:
     needs: resolve
+    if: needs.resolve.outputs.mergeable == 'true'
     uses: ./.github/workflows/_deploy.yml
     with:
-      ref: ${{ needs.resolve.outputs.head_sha }}
+      ref: ${{ needs.resolve.outputs.merge_sha }}
       environment: preview
 
   activate:
@@ -78,6 +123,7 @@ jobs:
       PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
       HEAD_REF: ${{ needs.resolve.outputs.head_ref }}
       HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+      MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
       FLAG_KEY: ${{ needs.resolve.outputs.flag_key }}
       APP_URL: ${{ needs.deploy.outputs.url }}
     steps:
@@ -87,10 +133,11 @@ jobs:
           ref: main
           path: main
 
-      - name: Check out the branch
+      # "branch" holds exactly what was deployed: the PR merged into main.
+      - name: Check out the deployed merge commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve.outputs.head_sha }}
+          ref: ${{ needs.resolve.outputs.merge_sha }}
           path: branch
 
       - uses: actions/setup-node@v4
@@ -188,7 +235,7 @@ jobs:
             echo "### Preview deployed"
             echo
             echo "- **App:** $APP_URL"
-            echo "- **Branch:** \`$HEAD_REF\` at \`${HEAD_SHA:0:7}\`"
+            echo "- **Branch:** \`$HEAD_REF\` at \`${HEAD_SHA:0:7}\`, deployed merged into \`main\` (\`refs/pull/$PR_NUMBER/merge\` at \`${MERGE_SHA:0:7}\`)"
             echo "- **Flag switched on:** \`$FLAG_KEY\`"
             echo
             if [[ "$(jq length results.json)" == 0 ]]; then
@@ -218,7 +265,7 @@ jobs:
           gh pr comment "$PR_NUMBER" --body-file comment.md
 
   report-failure:
-    needs: [resolve, deploy, activate]
+    needs: [resolve, conflict, deploy, activate]
     if: failure()
     runs-on: ubuntu-latest
     env:
