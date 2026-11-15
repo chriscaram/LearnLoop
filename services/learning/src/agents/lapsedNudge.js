@@ -30,7 +30,7 @@ export async function createModel() {
     model: process.env.BEDROCK_MODEL_ID || DEFAULT_MODEL_ID,
     region: process.env.AWS_REGION,
     temperature: 0.2,
-    maxTokens: 1024,
+    maxTokens: 8192,
     ...(roleArn ? { credentials: await assumedCredentials(roleArn) } : {}),
   });
 }
