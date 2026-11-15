@@ -42,5 +42,5 @@ export async function markRead(userId, notificationId, now = new Date()) {
 }
 
 export function toPublicNotification(n) {
-  return { id: n.id, type: n.type, title: n.title, body: n.body, link: n.link, createdAt: n.created_at, read: Boolean(n.read_at) };
+  return { id: n.id, type: n.type, title: n.title, body: n.body, link: n.link, createdAt: n.created_at, read: Boolean(n.read_at), appliedByAgent: n.applied_by_agent === true };
 }

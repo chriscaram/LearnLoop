@@ -12,6 +12,9 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@learnloop/shared": "1.0.0"
+    "@learnloop/shared": "1.0.0",
+    "@aws-sdk/client-sts": "^3.1169.0",
+    "@langchain/aws": "^1.5.2",
+    "@learnloop/notifications": "1.0.0"
   }
 }
