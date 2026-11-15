@@ -3,13 +3,16 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App.jsx';
 import { SessionProvider } from './lib/session.jsx';
+import { CartProvider } from './lib/cart.jsx';
 import './styles.css';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <SessionProvider>
-        <App />
+        <CartProvider>
+          <App />
+        </CartProvider>
       </SessionProvider>
     </BrowserRouter>
   </StrictMode>,

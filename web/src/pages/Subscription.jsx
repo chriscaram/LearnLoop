@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api, errorMessage } from '../lib/api.js';
 import { formatDate, subscriptionLabel } from '../lib/format.js';
-import { ErrorNote, Loading, PageTitle } from '../components/ui.jsx';
+import { ErrorNote, Loading } from '../components/ui.jsx';
+import { PLAN } from '../data/catalog.js';
+import { CheckIcon } from '../components/icons.jsx';
 
 export function SubscriptionPage() {
   const [subscription, setSubscription] = useState(null);
@@ -27,14 +29,25 @@ export function SubscriptionPage() {
     }
   }
 
-  if (!subscription) return error ? <ErrorNote>{error}</ErrorNote> : <Loading />;
+  if (!subscription) return <div className="container page">{error ? <ErrorNote>{error}</ErrorNote> : <Loading />}</div>;
   const canSubscribe = subscription.status !== 'active';
 
   return (
-    <>
-      <PageTitle title="Subscription" />
+    <div className="container page subscription-page">
+      <div className="plan-hero">
+        <div>
+          <span className="plan-kicker">Plans &amp; Pricing</span>
+          <h1>Grow your skills with the {PLAN.name}</h1>
+          <p className="lead">One subscription, every course in the catalog. Learn at your own pace and cancel anytime.</p>
+          <ul className="plan-features">
+            {PLAN.features.map((f) => <li key={f}><CheckIcon width="18" height="18" /> {f}</li>)}
+          </ul>
+        </div>
+        <img src="/images/banners/business.jpg" alt="" width="640" height="360" />
+      </div>
       <section className="card plan">
-        <h2>{subscription.plan.name} plan</h2>
+        <span className="plan-kicker">For you · Individual</span>
+        <h2>{PLAN.name} <span className="muted small">({subscription.plan.name} billing)</span></h2>
         <p className="price"><strong>{subscription.plan.priceUsd} USD</strong> per month. All courses included.</p>
         <dl className="facts">
           <dt>Status</dt><dd>{subscriptionLabel(subscription)}</dd>
@@ -43,7 +56,7 @@ export function SubscriptionPage() {
         </dl>
         {error && <ErrorNote>{error}</ErrorNote>}
         {canSubscribe && (
-          <button type="button" className="button" disabled={busy} onClick={() => run('/api/checkout')}>Subscribe for {subscription.plan.priceUsd} USD per month</button>
+          <button type="button" className="button primary large" disabled={busy} onClick={() => run('/api/checkout')}>Subscribe for {subscription.plan.priceUsd} USD per month</button>
         )}
         {subscription.status === 'active' && !confirming && (
           <button type="button" className="button ghost" onClick={() => setConfirming(true)}>Cancel subscription</button>
@@ -57,6 +70,6 @@ export function SubscriptionPage() {
         )}
         <p className="muted small">Payments in this demo are simulated; no card is charged.</p>
       </section>
-    </>
+    </div>
   );
 }

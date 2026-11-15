@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { errorMessage } from '../lib/api.js';
 import { useSession } from '../lib/session.jsx';
 import { ErrorNote } from '../components/ui.jsx';
@@ -31,17 +31,25 @@ export function LoginPage() {
   }
 
   return (
-    <section className="auth-card card">
-      <h1>Sign in</h1>
-      <p className="muted">Welcome to LearnLoop.</p>
-      <form onSubmit={submit} className="form">
-        <label htmlFor="email">Email</label>
-        <input id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        <label htmlFor="password">Password</label>
-        <input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-        {error && <ErrorNote>{error}</ErrorNote>}
-        <button type="submit" className="button" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-      </form>
-    </section>
+    <div className="auth-split">
+      <div className="auth-art" aria-hidden="true">
+        <img src="/images/banners/hero-skills.jpg" alt="" width="1340" height="400" />
+      </div>
+      <section className="auth-card">
+        <h1>Log in to continue your learning journey</h1>
+        <form onSubmit={submit} className="form">
+          <label htmlFor="email">Email</label>
+          <input id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          <label htmlFor="password">Password</label>
+          <input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+          {error && <ErrorNote>{error}</ErrorNote>}
+          <button type="submit" className="button primary large" disabled={busy}>{busy ? 'Logging in…' : 'Log in'}</button>
+        </form>
+        <p className="auth-hint small muted">Demo accounts use the password <code>learnloop-demo</code>.</p>
+        <div className="auth-foot">
+          <span>Don’t have an account?</span> <Link to="/courses">Browse courses first</Link>
+        </div>
+      </section>
+    </div>
   );
 }

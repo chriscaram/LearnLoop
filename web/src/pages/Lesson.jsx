@@ -5,6 +5,7 @@ import { formatDuration } from '../lib/format.js';
 import { markdownToHtml } from '../lib/markdown.js';
 import { useSession } from '../lib/session.jsx';
 import { ErrorNote, Loading } from '../components/ui.jsx';
+import { courseMeta } from '../data/catalog.js';
 
 function Quiz({ lessonId, quiz }) {
   const [answers, setAnswers] = useState({});
@@ -103,7 +104,7 @@ export function LessonPage() {
         <p><Link to={`/courses/${lesson.courseId}`}>Back to course</Link></p>
         <div className="eyebrow">Lesson {lesson.position} · {formatDuration(lesson.durationMin)}</div>
         <h1>{lesson.title}</h1>
-        <figure className="video-placeholder" aria-label={`Lesson video, ${lesson.durationMin} minutes`}>
+        <figure className="video-placeholder" aria-label={`Lesson video, ${lesson.durationMin} minutes`} style={{ backgroundImage: `linear-gradient(rgba(16,17,20,.55), rgba(16,17,20,.75)), url(${courseMeta(lesson.courseId).image})` }}>
           <div className="play" aria-hidden="true">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
           </div>
@@ -123,7 +124,7 @@ export function LessonPage() {
         {lesson.quiz && <Quiz key={lesson.id} lessonId={lesson.id} quiz={lesson.quiz} />}
       </article>
       <aside className="lesson-sidebar" aria-label="Course lessons">
-        <h2 className="h3">In this course</h2>
+        <h2 className="h3">Course content</h2>
         <ol>
           {siblings.map((s) => (
             <li key={s.id} className={s.id === lessonId ? 'current' : ''}>
