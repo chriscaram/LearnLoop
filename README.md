@@ -31,7 +31,6 @@ It runs on AWS (CloudFront, S3, API Gateway HTTP API, Lambda on Node.js 22) and 
    (mock data, conditional writes)        feature-flags        learnloop/prod/log-pseudonym-salt   staff_message
 
    EventBridge (daily 00:10 UTC) -> billing { "job": "renew_subscriptions" }  (services/billing/src/jobs/renewals.js)
-   EventBridge (daily 07:00 UTC) -> admin   { "job": "check_support_backlog" } (services/admin/src/services/support.js)
    s3://learnloop-prod-app-logs-<account>/app-logs/  historical application logs in the same format as the Lambda logs
 ```
 
@@ -68,7 +67,7 @@ Sessions are HMAC-SHA256 signed tokens (12 hours) in an `HttpOnly`, `Secure`, `S
 
 **Cart.** Signed out, the cart is kept in the browser (localStorage). At sign-in the web app merges it into the account's cart (`/api/me/cart`) once; from then on the server holds it, so it follows the learner to other devices. Enrolling in a course, at checkout or from the course page, takes it out of the cart. The wishlist stays in the browser.
 
-**Help and support.** Learners ask the team a question from the Help page (topic: billing, certificate, account, course_content or other, plus their text) and read the replies there. Staff answer from Admin, under Support requests (open questions oldest first). A reply also creates an inbox notification. The team aims to reply within one business day (24 hours, moved on to Monday when that falls on a weekend); the daily `check_support_backlog` job logs one `SupportReplyTimeout` warning per open question that has waited longer.
+**Help and support.** Learners ask the team a question from the Help page (topic: billing, certificate, account, course_content or other, plus their text) and read the replies there. Staff answer from Admin, under Support requests (open questions oldest first). A reply also creates an inbox notification.
 
 ## Local development
 

@@ -4,7 +4,7 @@ import { IDS, apiEvent, checkRoutesTable, fixtureData, setupTestEnvironment, tes
 import { latestSubscriptionByUser, listLearners, planLabel } from '../src/services/learners.js';
 import { sendStaffMessage, validateMessage } from '../src/services/messages.js';
 import { getFlags, updateFlag } from '../src/services/flags.js';
-import { SUPPORT_BACKLOG_JOB, checkSupportBacklog, listSupportQueue, replyToLearner } from '../src/services/support.js';
+import { listSupportQueue, replyToLearner } from '../src/services/support.js';
 import { routes } from '../src/routes.js';
 import { handler } from '../src/handler.js';
 
@@ -95,26 +95,6 @@ test('replyToLearner answers the question and names the staff member', async () 
   assert.equal(supportRequest.replies[0].staffName, 'Sam');
   assert.deepEqual((await listSupportQueue('open', NOW)), []);
   assert.equal(env.logs.events('support_reply_sent')[0].actor_type, 'staff');
-});
-
-test('the daily backlog check warns once per overdue open question', async () => {
-  assert.equal(await checkSupportBacklog(new Date('2026-10-31T07:00:00Z')), 0);
-  assert.equal(await checkSupportBacklog(new Date('2026-11-03T07:00:00Z')), 1);
-  env.logs.restore();
-  const warnings = env.logs.records.filter((r) => r.kind === 'log');
-  assert.equal(warnings.length, 1);
-  assert.deepEqual([warnings[0].level, warnings[0]['error.type'], warnings[0].message], ['warn', 'SupportReplyTimeout', 'support request waiting for a reply']);
-});
-
-test('the backlog check is a scheduled job of the admin function, logged as the system', async () => {
-  assert.deepEqual(await handler({ listJobs: true }), { jobs: [SUPPORT_BACKLOG_JOB] });
-  env.logs.clear();
-  assert.deepEqual(await handler({ job: SUPPORT_BACKLOG_JOB }), { ok: true });
-  env.logs.restore();
-  for (const r of env.logs.records) {
-    assert.equal(r['service.name'], 'admin');
-    assert.equal(r['user.id'], undefined);
-  }
 });
 
 test('HTTP: support queue and reply are staff-only', async () => {

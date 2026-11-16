@@ -198,13 +198,6 @@ export class LearnLoopStack extends Stack {
       targets: [new targets.LambdaFunction(functions.billing, { event: events.RuleTargetInput.fromObject({ job: 'renew_subscriptions' }) })],
     });
 
-    new events.Rule(this, 'SupportBacklogSchedule', {
-      ruleName: `${PREFIX}-check-support-backlog`,
-      description: 'Daily check for learner questions waiting longer than one business day',
-      schedule: events.Schedule.cron({ minute: '0', hour: '7' }),
-      targets: [new targets.LambdaFunction(functions.admin, { event: events.RuleTargetInput.fromObject({ job: 'check_support_backlog' }) })],
-    });
-
     // ------------------------------------------------------------ CloudFront
     const spaRewrite = new cloudfront.Function(this, 'SpaRewrite', {
       functionName: `${PREFIX}-spa-rewrite`,
