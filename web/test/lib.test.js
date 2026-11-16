@@ -33,3 +33,16 @@ test('support helpers: topic labels, status and waiting time', async () => {
   assert.equal(waitingFor('2026-11-02T12:00:00Z', now), '24 hours');
   assert.equal(waitingFor('2026-10-30T12:00:00Z', now), '4 days');
 });
+
+test('training helpers: status words, employer line and quiz attempts', async () => {
+  const { employerLine, quizAttemptsLabel, trainingStatusLabel } = await import('../src/lib/training.js');
+  assert.equal(trainingStatusLabel({ status: 'overdue' }), 'Overdue');
+  assert.equal(trainingStatusLabel({ status: 'assigned' }), 'Not started');
+  assert.equal(trainingStatusLabel({ status: 'completed', completedOnTime: true }), 'Completed');
+  assert.equal(trainingStatusLabel({ status: 'completed', completedOnTime: false }), 'Completed late');
+  assert.equal(employerLine({ organization: { name: 'Acme Freight' }, department: 'Finance' }), 'Acme Freight · Finance');
+  assert.equal(employerLine({ organization: null }), '');
+  assert.equal(quizAttemptsLabel({ quizAttempts: 0 }), 'No attempts yet');
+  assert.equal(quizAttemptsLabel({ quizAttempts: 3, failedQuizAttempts: 2, requiredPassScore: 80 }), '2 of 3 attempts below 80%');
+  assert.equal(quizAttemptsLabel({ quizAttempts: 1, failedQuizAttempts: 1, requiredPassScore: 80 }), '1 of 1 attempt below 80%');
+});

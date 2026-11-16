@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, errorMessage } from '../lib/api.js';
 import { formatDate, relativeDays } from '../lib/format.js';
 import { topicLabel, waitingFor } from '../lib/support.js';
+import { employerLine, quizAttemptsLabel, trainingStatusLabel } from '../lib/training.js';
 import { ErrorNote, Loading, PageTitle } from '../components/ui.jsx';
 
 function MessageDialog({ learner, onClose }) {
@@ -44,11 +45,58 @@ function MessageDialog({ learner, onClose }) {
   );
 }
 
+function TrainingDialog({ learner, onClose }) {
+  const ref = useRef(null);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    ref.current?.showModal();
+    api(`/api/admin/learners/${learner.userId}/training`).then(setData).catch(() => setError(true));
+  }, [learner.userId]);
+
+  return (
+    <dialog ref={ref} className="dialog wide" onClose={onClose} aria-labelledby="training-title">
+      <h2 id="training-title">Required training: {learner.name}</h2>
+      {data && (
+        <p className="muted small">
+          {employerLine(data.learner)}{data.learner.manager ? ` · Manager: ${data.learner.manager.name}` : ''}
+        </p>
+      )}
+      {error && <ErrorNote>The training could not be loaded.</ErrorNote>}
+      {!data && !error && <Loading />}
+      {data && data.assignments.length === 0 && <p className="muted">No required courses.</p>}
+      {data && data.assignments.length > 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Course</th><th scope="col">Due</th><th scope="col">Status</th><th scope="col">Progress</th><th scope="col">Quizzes</th></tr></thead>
+            <tbody>
+              {data.assignments.map((a) => (
+                <tr key={a.id}>
+                  <td>{a.courseTitle}</td>
+                  <td>{formatDate(a.dueAt)}</td>
+                  <td><span className={`status-pill ${a.status === 'overdue' ? 'open' : a.status === 'completed' ? 'answered' : ''}`}>{trainingStatusLabel(a)}</span></td>
+                  <td>{a.percent}% · {a.completedLessons} of {a.totalLessons} lessons</td>
+                  <td>{quizAttemptsLabel(a)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="row end">
+        <button type="button" className="button ghost" onClick={() => ref.current.close()}>Close</button>
+      </div>
+    </dialog>
+  );
+}
+
 function LearnersTab() {
   const [learners, setLearners] = useState(null);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
   const [messaging, setMessaging] = useState(null);
+  const [training, setTraining] = useState(null);
 
   useEffect(() => {
     api('/api/admin/learners').then((d) => setLearners(d.learners)).catch(() => setError(true));
@@ -78,17 +126,23 @@ function LearnersTab() {
           <tbody>
             {shown.map((l) => (
               <tr key={l.userId}>
-                <td><div>{l.name}</div><div className="muted small">{l.email}</div></td>
+                <td><div>{l.name}</div><div className="muted small">{l.email}</div>{l.organization && <div className="muted small">{employerLine(l)}</div>}</td>
                 <td>{l.plan}</td>
                 <td>{l.enrolledCourses.length ? l.enrolledCourses.join(', ') : <span className="muted">None</span>}</td>
                 <td>{relativeDays(l.lastActivityAt)}</td>
-                <td><button type="button" className="button ghost small" onClick={() => setMessaging(l)}>Send message</button></td>
+                <td>
+                  <div className="row end">
+                    {l.organization && <button type="button" className="button ghost small" onClick={() => setTraining(l)}>Training</button>}
+                    <button type="button" className="button ghost small" onClick={() => setMessaging(l)}>Send message</button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {messaging && <MessageDialog learner={messaging} onClose={() => setMessaging(null)} />}
+      {training && <TrainingDialog learner={training} onClose={() => setTraining(null)} />}
     </>
   );
 }
