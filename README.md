@@ -1,6 +1,6 @@
 # LearnLoop
 
-LearnLoop is an online course platform with a monthly subscription. Learners sign in, browse a catalog of 12 courses, put courses in a cart and check out, work through lessons and quizzes, track their progress, manage their subscription, read notifications and ask the team questions. Staff see a learner list, answer learner questions, write to learners and switch feature flags.
+LearnLoop is an online course platform with a monthly subscription. Learners sign in, browse a catalog of 12 courses, put courses in a cart and check out, work through lessons and quizzes, track their progress, manage their subscription, read notifications and ask the team questions. Some learners are employees of enterprise customer accounts that require them to complete certain courses by a date. Staff see a learner list, look up an employee's required training, answer learner questions, write to learners and switch feature flags.
 
 It runs on AWS (CloudFront, S3, API Gateway HTTP API, Lambda on Node.js 22) and uses **mock data only**. There is no database and no payment provider: checkout always succeeds and state lives in JSON documents in S3.
 
@@ -61,11 +61,15 @@ docs/business/           business documents
 | learning | `GET /api/courses/{courseId}/lessons`, `GET /api/lessons/{lessonId}`, `POST /api/lessons/{lessonId}/progress`, `POST /api/lessons/{lessonId}/quiz`, `GET /api/me/progress` |
 | billing | `GET /api/me/subscription`, `POST /api/checkout`, `POST /api/me/subscription/cancel`; job `renew_subscriptions` |
 | notifications | `GET /api/me/notifications`, `POST /api/me/notifications/{notificationId}/read`, `GET /api/me/notifications/unread-count`, `GET /api/me/support-requests`, `POST /api/me/support-requests` |
-| admin (staff) | `GET /api/admin/learners`, `POST /api/admin/learners/{userId}/message`, `GET /api/admin/flags`, `PUT /api/admin/flags/{flagKey}`, `GET /api/admin/support-requests` (`?status=open` by default, or `answered`), `POST /api/admin/support-requests/{requestId}/reply`; job `check_support_backlog` |
+| admin (staff) | `GET /api/admin/learners` (`?organization=<id>` for one enterprise account's employees), `GET /api/admin/learners/{userId}/training`, `POST /api/admin/learners/{userId}/message`, `GET /api/admin/flags`, `PUT /api/admin/flags/{flagKey}`, `GET /api/admin/support-requests` (`?status=open` by default, or `answered`), `POST /api/admin/support-requests/{requestId}/reply`; job `check_support_backlog` |
 
 Sessions are HMAC-SHA256 signed tokens (12 hours) in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie. Every account uses the demo password `learnloop-demo`.
 
 **Cart.** Signed out, the cart is kept in the browser (localStorage). At sign-in the web app merges it into the account's cart (`/api/me/cart`) once; from then on the server holds it, so it follows the learner to other devices. Enrolling in a course, at checkout or from the course page, takes it out of the cart. The wishlist stays in the browser.
+
+**Enterprise accounts and required training.** An enterprise customer account is an `organizations` record (`id`, `name`, `created_at`). Its employees are ordinary learners whose user record also has `organization_id`, `department` (their team) and `manager_id` (the user id of their manager, who is an employee of the same account; `null` for a manager). The account's required courses are `training_assignments` records: `id`, `organization_id`, `user_id`, `course_id`, `assigned_at`, `due_at` and `required_pass_score` (a percentage). An assignment's status is worked out when it is read (`services/admin/src/services/training.js`, `trainingState`): **completed** once every lesson of the course is completed and every quiz in it has an attempt scoring at least `required_pass_score` (`completedAt` is when the last of those happened, `completedOnTime` compares it with `due_at`); otherwise **overdue** after `due_at`, **in_progress** when the employee has any lesson or quiz activity on the course, else **assigned**. Quiz attempts are the learner's `quiz_results` on the course's lessons; a learner may take a quiz again. Staff open an employee's required training from Admin → Learners → Training (`GET /api/admin/learners/{userId}/training`: the employee, their organization, team and manager, and per assignment the status, completion, lessons done, quiz attempts and how many were below the pass score). Reminders to employees use the ordinary staff message (`POST /api/admin/learners/{userId}/message`, event `staff_message_sent`).
+
+**Notifications.** Each record in `notifications` has `id`, `user_id`, `type` (`welcome`, `payment_receipt`, `new_course_published`, `staff_message`, `support_reply`), `title`, `body`, `link` (the page it opens, or `null`), `created_at` and `read_at` (`null` until the learner opens it; `POST /api/me/notifications/{notificationId}/read` sets it once and logs `notification_opened`). A notification written by an automated job may also carry `applied_by_agent: true`; `npm run notifications:since` reports it.
 
 **Help and support.** Learners ask the team a question from the Help page (topic: billing, certificate, account, course_content or other, plus their text) and read the replies there. Staff answer from Admin, under Support requests (open questions oldest first). A reply also creates an inbox notification.
 
@@ -120,7 +124,7 @@ CDK stack parameters: `sesSender` and `emailRecipientOverride` (optional).
 
 ## Mock data
 
-`data/seed/*.json` is the initial state: users, courses, lessons, enrolments, progress, subscriptions, notifications, quiz results, carts and support requests. Lambda bundles include these files. Each state domain is copied into the state bucket the first time it is read, and `npm run state:reset` restores them. The files are generated by a separate repository, `learnloop-demo-tools`, which also uploads historical logs to the app-logs bucket and to the access-logs bucket under `cloudfront/`.
+`data/seed/*.json` is the initial state: users, courses, lessons, enrolments, progress, subscriptions, notifications, quiz results, carts, support requests, organizations (enterprise accounts) and training assignments. Lambda bundles include these files. Each state domain is copied into the state bucket the first time it is read, and `npm run state:reset` restores them. The files are generated by a separate repository, `learnloop-demo-tools`, which also uploads historical logs to the app-logs bucket and to the access-logs bucket under `cloudfront/`.
 
 ## Demo logins
 

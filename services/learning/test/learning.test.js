@@ -2,7 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { IDS, apiEvent, checkRoutesTable, fixtureData, setupTestEnvironment, testSessionCookie } from '@learnloop/shared/testing';
 import {
-  assertEnrolled, completionPercent, daysSinceLastActivity, getCourseProgress, getLastActivityAt,
+  assertEnrolled, completionPercent, daysSinceLastActivity, getCourseProgress, getCourseRecord, getLastActivityAt,
   getLastLessonViewed, listProgressOverview, nextLessonFor, recordLessonProgress,
 } from '../src/services/progress.js';
 import { getLessonForLearner, listCourseLessons, publicQuiz } from '../src/services/lessons.js';
@@ -35,6 +35,20 @@ test('getCourseProgress summarises one course', async () => {
   assert.equal(p.nextLesson.id, IDS.lesson2);
   assert.equal(p.lastActivityAt, '2026-10-05T10:00:00.000Z');
   assert.equal(await getCourseProgress(IDS.learner, 'crs_ffffffffffff'), null);
+});
+
+test('getCourseRecord: the course\'s lessons with quiz flags, the learner\'s records and quiz attempts on that course only', async () => {
+  await submitQuiz(IDS.learner, IDS.lesson3, { q1: 1, q2: 0 }, new Date('2026-11-02T10:00:00Z'));
+  await submitQuiz(IDS.learner, IDS.lesson3, { q1: 0, q2: 0 }, new Date('2026-11-02T10:05:00Z'));
+  const record = await getCourseRecord(IDS.learner, IDS.cloud);
+  assert.equal(record.courseTitle, 'Cloud Foundations');
+  assert.deepEqual(record.lessons.map((l) => [l.id, l.hasQuiz]), [[IDS.lesson1, false], [IDS.lesson2, false], [IDS.lesson3, true]]);
+  assert.equal(record.progress.length, 2);
+  assert.deepEqual(record.quizResults.map((r) => r.score), [50, 100]);
+  assert.equal(record.lastActivityAt, '2026-10-05T10:00:00.000Z');
+  assert.deepEqual((await getCourseRecord(IDS.learner, IDS.data)).quizResults, []);
+  assert.equal((await getCourseRecord(IDS.learnerNoSub, IDS.cloud)).progress.length, 0);
+  assert.equal(await getCourseRecord(IDS.learner, 'crs_ffffffffffff'), null);
 });
 
 test('getLastLessonViewed and nextLessonFor', async () => {

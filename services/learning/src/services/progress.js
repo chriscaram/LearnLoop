@@ -3,6 +3,7 @@ import { HttpError, notFound } from '@learnloop/shared/http';
 import { listEnrolledCourseIds } from '../repositories/enrolments.js';
 import { findCourseById, findLessonById, listLessonsForCourse } from '../repositories/lessons.js';
 import { listCourseActivity, listLessonProgress, saveLessonProgress } from '../repositories/progress.js';
+import { listQuizResults } from '../repositories/quizResults.js';
 
 const DAY_MS = 86_400_000;
 
@@ -72,6 +73,32 @@ export async function daysSinceLastActivity(userId, now = new Date()) {
   const last = await getLastActivityAt(userId);
   if (!last) return null;
   return Math.floor((now - new Date(last)) / DAY_MS);
+}
+
+/**
+ * Everything that decides whether a learner has met a course's requirements: its
+ * lessons in order (whether each has a quiz), the learner's lesson records and every
+ * quiz attempt on the course's lessons, oldest first. Null for an unknown course.
+ */
+export async function getCourseRecord(userId, courseId) {
+  const [course, lessons, records, results] = await Promise.all([
+    findCourseById(courseId),
+    listLessonsForCourse(courseId),
+    listLessonProgress(userId, courseId),
+    listQuizResults(userId),
+  ]);
+  if (!course) return null;
+  const lessonIds = new Set(lessons.map((l) => l.id));
+  return {
+    courseId,
+    courseTitle: course.title,
+    lessons: lessons.map((l) => ({ id: l.id, duration_min: l.duration_min, hasQuiz: Boolean(l.quiz) })),
+    progress: records,
+    quizResults: results
+      .filter((r) => lessonIds.has(r.lesson_id))
+      .sort((a, b) => a.submitted_at.localeCompare(b.submitted_at) || a.id.localeCompare(b.id)),
+    lastActivityAt: (await listCourseActivity(userId)).find((a) => a.course_id === courseId)?.last_activity_at ?? null,
+  };
 }
 
 /** Progress for every enrolled course, most recently active first. */

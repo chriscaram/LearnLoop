@@ -155,6 +155,10 @@ export const IDS = Object.freeze({
   ntfUnread: 'ntf_0000000000e2',
   supportOpen: 'sup_0000000000a1',
   supportAnswered: 'sup_0000000000a2',
+  org: 'org_0000000000a1',
+  assignmentCloud: 'asg_0000000000a1',
+  assignmentData: 'asg_0000000000a2',
+  assignmentManager: 'asg_0000000000a3',
 });
 
 export function fixtureData() {
@@ -166,8 +170,8 @@ export function fixtureData() {
   };
   return {
     users: [
-      { id: IDS.learner, email: 'lee.learner@example.com', name: 'Lee Learner', role: 'learner', created_at: '2026-06-01T09:00:00.000Z' },
-      { id: IDS.learnerNoSub, email: 'nia.nosub@example.com', name: 'Nia Nosub', role: 'learner', created_at: '2026-06-01T09:00:00.000Z' },
+      { id: IDS.learner, email: 'lee.learner@example.com', name: 'Lee Learner', role: 'learner', created_at: '2026-06-01T09:00:00.000Z', organization_id: IDS.org, manager_id: IDS.learnerNoSub, department: 'Finance' },
+      { id: IDS.learnerNoSub, email: 'nia.nosub@example.com', name: 'Nia Nosub', role: 'learner', created_at: '2026-06-01T09:00:00.000Z', organization_id: IDS.org, manager_id: null, department: 'Finance' },
       { id: IDS.staff, email: 'sam.staff@example.com', name: 'Sam Staff', role: 'staff', created_at: '2026-01-01T09:00:00.000Z' },
     ],
     courses: [
@@ -206,6 +210,14 @@ export function fixtureData() {
     support_requests: [
       { id: IDS.supportAnswered, user_id: IDS.learner, topic: 'billing', body: 'Can I get a copy of my last receipt?', created_at: '2026-10-20T09:00:00.000Z', status: 'answered', replies: [{ staff_id: IDS.staff, body: 'It is on the Subscription page.', created_at: '2026-10-20T11:30:00.000Z' }], answered_at: '2026-10-20T11:30:00.000Z' },
       { id: IDS.supportOpen, user_id: IDS.learner, topic: 'certificate', body: 'Will I get a certificate for Cloud Foundations?', created_at: '2026-10-30T16:00:00.000Z', status: 'open', replies: [], answered_at: null },
+    ],
+    organizations: [
+      { id: IDS.org, name: 'Acme Freight', created_at: '2026-05-01T09:00:00.000Z' },
+    ],
+    training_assignments: [
+      { id: IDS.assignmentCloud, organization_id: IDS.org, user_id: IDS.learner, course_id: IDS.cloud, assigned_at: '2026-10-01T09:00:00.000Z', due_at: '2026-11-20T23:59:59.000Z', required_pass_score: 80 },
+      { id: IDS.assignmentData, organization_id: IDS.org, user_id: IDS.learner, course_id: IDS.data, assigned_at: '2026-09-15T09:00:00.000Z', due_at: '2026-10-31T23:59:59.000Z', required_pass_score: 80 },
+      { id: IDS.assignmentManager, organization_id: IDS.org, user_id: IDS.learnerNoSub, course_id: IDS.cloud, assigned_at: '2026-10-01T09:00:00.000Z', due_at: '2026-11-20T23:59:59.000Z', required_pass_score: 80 },
     ],
   };
 }

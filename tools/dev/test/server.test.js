@@ -13,7 +13,8 @@ test('route table matches templates and prefers static segments', () => {
   const cart = matchRoute(table, 'DELETE', '/api/me/cart/items/crs_0123456789ab');
   assert.equal(cart.route.path, '/api/me/cart/items/{courseId}');
   assert.equal(matchRoute(table, 'POST', '/api/admin/support-requests/sup_0123456789ab/reply').route.path, '/api/admin/support-requests/{requestId}/reply');
-  assert.equal(table.length, 29);
+  assert.equal(matchRoute(table, 'GET', '/api/admin/learners/usr_0123456789ab/training').route.path, '/api/admin/learners/{userId}/training');
+  assert.equal(table.length, 30);
 });
 
 test('end to end against the seed data: sign in, read progress and notifications', async () => {
@@ -41,6 +42,15 @@ test('end to end against the seed data: sign in, read progress and notifications
     assert.equal(asked.status, 200);
     const mine = await (await fetch(`${base}/api/me/support-requests`, { headers: { cookie } })).json();
     assert.equal(mine.supportRequests[0].status, 'open');
+    const staffLogin = await fetch(`${base}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'sofia.lindqvist@example.com', password: 'learnloop-demo' }),
+    });
+    const staffCookie = staffLogin.headers.get('set-cookie').split(';')[0];
+    const ana = (await (await fetch(`${base}/api/me`, { headers: { cookie } })).json()).user;
+    const training = await fetch(`${base}/api/admin/learners/${ana.id}/training`, { headers: { cookie: staffCookie } });
+    assert.equal(training.status, 200);
+    assert.ok(Array.isArray((await training.json()).assignments));
   } finally {
     server.close();
     logs.restore();

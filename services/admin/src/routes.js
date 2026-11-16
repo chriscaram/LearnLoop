@@ -1,11 +1,17 @@
 import { ok } from '@learnloop/shared/http';
 import { getFlags, updateFlag } from './services/flags.js';
-import { listLearners } from './services/learners.js';
+import { listLearners, listOrganizationNames } from './services/learners.js';
 import { sendStaffMessage } from './services/messages.js';
 import { listSupportQueue, replyToLearner } from './services/support.js';
+import { getLearnerTraining } from './services/training.js';
 
-async function learners({ now }) {
-  return ok({ learners: await listLearners(now) });
+async function learners({ query, now }) {
+  const [rows, organizations] = await Promise.all([listLearners(now, { organizationId: query.organization }), listOrganizationNames()]);
+  return ok({ learners: rows, organizations });
+}
+
+async function training({ params, now }) {
+  return ok(await getLearnerTraining(params.userId, now));
 }
 
 async function message({ user, params, body, now }) {
@@ -30,6 +36,7 @@ async function replySupport({ user, params, body, now }) {
 
 export const routes = [
   { method: 'GET', path: '/api/admin/learners', auth: 'staff', handler: learners },
+  { method: 'GET', path: '/api/admin/learners/{userId}/training', auth: 'staff', handler: training },
   { method: 'POST', path: '/api/admin/learners/{userId}/message', auth: 'staff', handler: message },
   { method: 'GET', path: '/api/admin/flags', auth: 'staff', handler: flags },
   { method: 'PUT', path: '/api/admin/flags/{flagKey}', auth: 'staff', handler: putFlag },
