@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, errorMessage } from '../lib/api.js';
-import { relativeDays } from '../lib/format.js';
+import { formatDate, relativeDays } from '../lib/format.js';
+import { topicLabel, waitingFor } from '../lib/support.js';
 import { ErrorNote, Loading, PageTitle } from '../components/ui.jsx';
 
 function MessageDialog({ learner, onClose }) {
@@ -138,16 +139,86 @@ function FlagsTab() {
   );
 }
 
+function SupportRequest({ request, onReplied }) {
+  const [body, setBody] = useState('');
+  const [state, setState] = useState({ busy: false, error: null });
+
+  async function reply(e) {
+    e.preventDefault();
+    setState({ busy: true, error: null });
+    try {
+      await api(`/api/admin/support-requests/${request.id}/reply`, { method: 'POST', body: { body } });
+      onReplied(request.id);
+    } catch (err) {
+      setState({ busy: false, error: errorMessage(err) });
+    }
+  }
+
+  return (
+    <li className="card">
+      <div className="notification-head">
+        <h3 className="h3">{topicLabel(request.topic)} · {request.learner?.name ?? 'Unknown learner'}</h3>
+        <span className={`status-pill ${request.overdue ? 'open' : ''}`}>
+          {request.overdue ? `Overdue, waiting ${waitingFor(request.createdAt)}` : `Waiting ${waitingFor(request.createdAt)}`}
+        </span>
+      </div>
+      <p className="muted small">{request.learner?.email} · asked on {formatDate(request.createdAt)}</p>
+      <p className="support-body">{request.body}</p>
+      <form className="form" onSubmit={reply}>
+        <label htmlFor={`reply-${request.id}`}>Reply</label>
+        <textarea id={`reply-${request.id}`} required maxLength={2000} rows={3} value={body} onChange={(e) => setBody(e.target.value)} />
+        {state.error && <ErrorNote>{state.error}</ErrorNote>}
+        <div className="row end">
+          <button type="submit" className="button" disabled={state.busy || !body.trim()}>{state.busy ? 'Sending…' : 'Send reply'}</button>
+        </div>
+      </form>
+    </li>
+  );
+}
+
+function SupportTab() {
+  const [requests, setRequests] = useState(null);
+  const [error, setError] = useState(false);
+  const [sent, setSent] = useState(0);
+
+  useEffect(() => {
+    api('/api/admin/support-requests').then((d) => setRequests(d.supportRequests)).catch(() => setError(true));
+  }, []);
+
+  if (error) return <ErrorNote>Support requests could not be loaded.</ErrorNote>;
+  if (!requests) return <Loading />;
+  const overdue = requests.filter((r) => r.overdue).length;
+  return (
+    <>
+      <div className="row space">
+        <span className="muted small">
+          {requests.length} open {requests.length === 1 ? 'question' : 'questions'}, oldest first{overdue ? ` · ${overdue} waiting longer than one business day` : ''}
+        </span>
+        {sent > 0 && <span className="success small" role="status">{sent} {sent === 1 ? 'reply' : 'replies'} sent</span>}
+      </div>
+      {requests.length === 0 && <p className="muted">No open questions. Everything has been answered.</p>}
+      <ul className="support-queue">
+        {requests.map((r) => (
+          <SupportRequest key={r.id} request={r} onReplied={(id) => { setRequests((list) => list.filter((x) => x.id !== id)); setSent((n) => n + 1); }} />
+        ))}
+      </ul>
+    </>
+  );
+}
+
+const TABS = [['learners', 'Learners'], ['support', 'Support requests'], ['flags', 'Feature flags']];
+
 export function AdminPage() {
   const [tab, setTab] = useState('learners');
   return (
     <>
       <PageTitle title="Admin" />
       <div className="tabs" role="tablist" aria-label="Admin sections">
-        <button type="button" role="tab" aria-selected={tab === 'learners'} className={tab === 'learners' ? 'active' : ''} onClick={() => setTab('learners')}>Learners</button>
-        <button type="button" role="tab" aria-selected={tab === 'flags'} className={tab === 'flags' ? 'active' : ''} onClick={() => setTab('flags')}>Feature flags</button>
+        {TABS.map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key} className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>{label}</button>
+        ))}
       </div>
-      <div role="tabpanel">{tab === 'learners' ? <LearnersTab /> : <FlagsTab />}</div>
+      <div role="tabpanel">{tab === 'learners' ? <LearnersTab /> : tab === 'support' ? <SupportTab /> : <FlagsTab />}</div>
     </>
   );
 }

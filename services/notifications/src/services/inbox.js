@@ -3,7 +3,7 @@ import { logEvent } from '@learnloop/shared/logger';
 import { listNotificationsForUser, insertNotification, setNotificationRead } from '../repositories/notifications.js';
 
 /** Transactional notification types. */
-export const NOTIFICATION_TYPES = Object.freeze(['welcome', 'payment_receipt', 'new_course_published', 'staff_message']);
+export const NOTIFICATION_TYPES = Object.freeze(['welcome', 'payment_receipt', 'new_course_published', 'staff_message', 'support_reply']);
 
 export const newNotificationId = () => `ntf_${randomBytes(6).toString('hex')}`;
 

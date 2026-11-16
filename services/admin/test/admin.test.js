@@ -4,6 +4,7 @@ import { IDS, apiEvent, checkRoutesTable, fixtureData, setupTestEnvironment, tes
 import { latestSubscriptionByUser, listLearners, planLabel } from '../src/services/learners.js';
 import { sendStaffMessage, validateMessage } from '../src/services/messages.js';
 import { getFlags, updateFlag } from '../src/services/flags.js';
+import { SUPPORT_BACKLOG_JOB, checkSupportBacklog, listSupportQueue, replyToLearner } from '../src/services/support.js';
 import { routes } from '../src/routes.js';
 import { handler } from '../src/handler.js';
 
@@ -14,6 +15,7 @@ const NOW = new Date('2026-11-03T12:00:00Z');
 test('routes table (all staff-only)', () => {
   checkRoutesTable(assert, routes, { service: 'admin', expected: [
     'GET /api/admin/learners', 'POST /api/admin/learners/{userId}/message', 'GET /api/admin/flags', 'PUT /api/admin/flags/{flagKey}',
+    'GET /api/admin/support-requests', 'POST /api/admin/support-requests/{requestId}/reply',
   ] });
   assert.ok(routes.every((r) => r.auth === 'staff'));
 });
@@ -74,4 +76,60 @@ test('HTTP: learners need staff role; message and flag toggle work', async () =>
   const flag = await handler(apiEvent('PUT /api/admin/flags/{flagKey}', { cookie: staff, pathParameters: { flagKey: 'new_catalog_filters' }, body: { enabled: true } }));
   env.logs.restore();
   assert.equal(JSON.parse(flag.body).flag.enabled, true);
+});
+
+test('listSupportQueue: open questions oldest first with the learner and whether the reply is overdue', async () => {
+  const open = await listSupportQueue('open', NOW);
+  assert.deepEqual(open.map((r) => [r.id, r.learner.name, r.overdue]), [[IDS.supportOpen, 'Lee Learner', true]]);
+  assert.equal(open[0].learner.email, 'lee.learner@example.com');
+  const early = await listSupportQueue('open', new Date('2026-10-31T09:00:00Z'));
+  assert.equal(early[0].overdue, false);
+  const answered = await listSupportQueue('answered', NOW);
+  assert.deepEqual(answered.map((r) => [r.id, r.overdue, r.replies[0].staffName]), [[IDS.supportAnswered, false, 'Sam']]);
+});
+
+test('replyToLearner answers the question and names the staff member', async () => {
+  const { supportRequest } = await replyToLearner(IDS.staff, IDS.supportOpen, { body: 'Yes, from next month.' }, NOW);
+  env.logs.restore();
+  assert.equal(supportRequest.status, 'answered');
+  assert.equal(supportRequest.replies[0].staffName, 'Sam');
+  assert.deepEqual((await listSupportQueue('open', NOW)), []);
+  assert.equal(env.logs.events('support_reply_sent')[0].actor_type, 'staff');
+});
+
+test('the daily backlog check warns once per overdue open question', async () => {
+  assert.equal(await checkSupportBacklog(new Date('2026-10-31T07:00:00Z')), 0);
+  assert.equal(await checkSupportBacklog(new Date('2026-11-03T07:00:00Z')), 1);
+  env.logs.restore();
+  const warnings = env.logs.records.filter((r) => r.kind === 'log');
+  assert.equal(warnings.length, 1);
+  assert.deepEqual([warnings[0].level, warnings[0]['error.type'], warnings[0].message], ['warn', 'SupportReplyTimeout', 'support request waiting for a reply']);
+});
+
+test('the backlog check is a scheduled job of the admin function, logged as the system', async () => {
+  assert.deepEqual(await handler({ listJobs: true }), { jobs: [SUPPORT_BACKLOG_JOB] });
+  env.logs.clear();
+  assert.deepEqual(await handler({ job: SUPPORT_BACKLOG_JOB }), { ok: true });
+  env.logs.restore();
+  for (const r of env.logs.records) {
+    assert.equal(r['service.name'], 'admin');
+    assert.equal(r['user.id'], undefined);
+  }
+});
+
+test('HTTP: support queue and reply are staff-only', async () => {
+  const learner = await testSessionCookie({ userId: IDS.learner });
+  assert.equal((await handler(apiEvent('GET /api/admin/support-requests', { cookie: learner }))).statusCode, 403);
+  const staff = await testSessionCookie({ userId: IDS.staff, role: 'staff' });
+  const open = JSON.parse((await handler(apiEvent('GET /api/admin/support-requests', { cookie: staff }))).body);
+  assert.equal(open.supportRequests.length, 1);
+  const bad = await handler(apiEvent('GET /api/admin/support-requests', { cookie: staff, query: { status: 'closed' } }));
+  assert.equal(bad.statusCode, 400);
+  const reply = await handler(apiEvent('POST /api/admin/support-requests/{requestId}/reply', { cookie: staff, pathParameters: { requestId: IDS.supportOpen }, body: { body: 'Done.' } }));
+  const missing = await handler(apiEvent('POST /api/admin/support-requests/{requestId}/reply', { cookie: staff, pathParameters: { requestId: 'sup_ffffffffffff' }, body: { body: 'Done.' } }));
+  const answered = JSON.parse((await handler(apiEvent('GET /api/admin/support-requests', { cookie: staff, query: { status: 'answered' } }))).body);
+  env.logs.restore();
+  assert.equal(reply.statusCode, 200);
+  assert.equal(missing.statusCode, 404);
+  assert.equal(answered.supportRequests.length, 2);
 });

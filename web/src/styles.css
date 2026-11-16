@@ -558,3 +558,13 @@ tbody tr:last-child td { border-bottom: none; }
   .cart-links, .cart-price { grid-column: 2; justify-items: start; }
   .header-actions .button.outline { display: none; }
 }
+
+/* Help and support */
+.help-history-title { margin-top: 2rem; }
+.support-list { list-style: none; padding: 0; margin: 0; }
+.support-body { white-space: pre-wrap; }
+.support-reply { border-left: 3px solid var(--primary); padding: 0.25rem 0 0.25rem 0.85rem; margin-top: 0.75rem; }
+.status-pill { font-size: 0.8rem; font-weight: 700; border-radius: 999px; padding: 0.15rem 0.6rem; border: 1px solid var(--border); white-space: nowrap; }
+.status-pill.open { color: var(--danger); border-color: currentColor; }
+.status-pill.answered { color: var(--success); border-color: currentColor; }
+.support-queue { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }

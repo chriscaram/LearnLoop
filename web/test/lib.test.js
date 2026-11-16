@@ -21,3 +21,15 @@ test('format helpers', () => {
   assert.equal(subscriptionLabel({ status: 'active' }), 'Active');
   assert.equal(subscriptionLabel({ status: 'none' }), 'No subscription');
 });
+
+test('support helpers: topic labels, status and waiting time', async () => {
+  const { SUPPORT_TOPICS, supportStatusLabel, topicLabel, waitingFor } = await import('../src/lib/support.js');
+  assert.deepEqual(SUPPORT_TOPICS.map(([k]) => k), ['billing', 'certificate', 'account', 'course_content', 'other']);
+  assert.equal(topicLabel('certificate'), 'Certificates');
+  assert.equal(topicLabel('unknown'), 'Something else');
+  assert.equal(supportStatusLabel({ status: 'open' }), 'Waiting for a reply');
+  const now = new Date('2026-11-03T12:00:00Z');
+  assert.equal(waitingFor('2026-11-03T11:30:00Z', now), 'less than an hour');
+  assert.equal(waitingFor('2026-11-02T12:00:00Z', now), '24 hours');
+  assert.equal(waitingFor('2026-10-30T12:00:00Z', now), '4 days');
+});

@@ -26,6 +26,9 @@ export const errorMessage = (error) => {
     already_subscribed: 'You already have an active subscription.',
     no_active_subscription: 'There is no active subscription to cancel.',
     already_enrolled: 'You are already enrolled in this course.',
+    invalid_topic: 'Please choose a topic.',
+    invalid_body: 'Please write a message (up to 2,000 characters).',
+    support_request_not_found: 'That question no longer exists.',
   };
   return messages[error?.code] ?? 'Something went wrong. Please try again.';
 };

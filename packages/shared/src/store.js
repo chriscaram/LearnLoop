@@ -21,6 +21,7 @@ export const DOMAINS = Object.freeze([
   'notifications',
   'quiz_results',
   'carts',
+  'support_requests',
 ]);
 
 /** Reads within this window reuse the cached copy without a network call. */

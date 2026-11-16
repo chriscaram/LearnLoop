@@ -12,7 +12,8 @@ test('route table matches templates and prefers static segments', () => {
   assert.equal(matchRoute(table, 'DELETE', '/api/me'), null);
   const cart = matchRoute(table, 'DELETE', '/api/me/cart/items/crs_0123456789ab');
   assert.equal(cart.route.path, '/api/me/cart/items/{courseId}');
-  assert.equal(table.length, 25);
+  assert.equal(matchRoute(table, 'POST', '/api/admin/support-requests/sup_0123456789ab/reply').route.path, '/api/admin/support-requests/{requestId}/reply');
+  assert.equal(table.length, 29);
 });
 
 test('end to end against the seed data: sign in, read progress and notifications', async () => {
@@ -36,6 +37,10 @@ test('end to end against the seed data: sign in, read progress and notifications
     const course = (await (await fetch(`${base}/api/courses`)).json()).courses.find((c) => !enrolled.has(c.id));
     const cart = await (await fetch(`${base}/api/me/cart/items`, { method: 'POST', headers: json, body: JSON.stringify({ courseId: course.id }) })).json();
     assert.ok(cart.cart.items.some((i) => i.courseId === course.id));
+    const asked = await fetch(`${base}/api/me/support-requests`, { method: 'POST', headers: json, body: JSON.stringify({ topic: 'certificate', body: 'Is there a certificate?' }) });
+    assert.equal(asked.status, 200);
+    const mine = await (await fetch(`${base}/api/me/support-requests`, { headers: { cookie } })).json();
+    assert.equal(mine.supportRequests[0].status, 'open');
   } finally {
     server.close();
     logs.restore();

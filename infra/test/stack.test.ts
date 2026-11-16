@@ -109,12 +109,22 @@ test('SES: no identities are created; the sender is a parameter', () => {
 });
 
 test('renewal schedule targets the billing function with the renewal job', () => {
-  const [rule] = ofType('AWS::Events::Rule');
+  const rule = ofType('AWS::Events::Rule').find((r) => r.Properties!.Name === 'learnloop-prod-renew-subscriptions')!;
   assert.equal(rule.Properties!.ScheduleExpression, 'cron(10 0 * * ? *)');
   const target = rule.Properties!.Targets[0];
   assert.deepEqual(JSON.parse(target.Input), { job: 'renew_subscriptions' });
   const billingId = Object.entries(resources).find(([, r]) => r.Properties?.FunctionName === 'learnloop-prod-billing')![0];
   assert.deepEqual(target.Arn, { 'Fn::GetAtt': [billingId, 'Arn'] });
+});
+
+test('support backlog check runs daily on the admin function', () => {
+  assert.equal(ofType('AWS::Events::Rule').length, 2);
+  const rule = ofType('AWS::Events::Rule').find((r) => r.Properties!.Name === 'learnloop-prod-check-support-backlog')!;
+  assert.equal(rule.Properties!.ScheduleExpression, 'cron(0 7 * * ? *)');
+  const target = rule.Properties!.Targets[0];
+  assert.deepEqual(JSON.parse(target.Input), { job: 'check_support_backlog' });
+  const adminId = Object.entries(resources).find(([, r]) => r.Properties?.FunctionName === 'learnloop-prod-admin')![0];
+  assert.deepEqual(target.Arn, { 'Fn::GetAtt': [adminId, 'Arn'] });
 });
 
 test('stack outputs used by deploy and upload tooling', () => {

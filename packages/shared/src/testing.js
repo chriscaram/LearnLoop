@@ -153,6 +153,8 @@ export const IDS = Object.freeze({
   sub: 'sub_0000000000d1',
   ntfRead: 'ntf_0000000000e1',
   ntfUnread: 'ntf_0000000000e2',
+  supportOpen: 'sup_0000000000a1',
+  supportAnswered: 'sup_0000000000a2',
 });
 
 export function fixtureData() {
@@ -200,6 +202,10 @@ export function fixtureData() {
     quiz_results: [],
     carts: [
       { user_id: IDS.learner, items: [{ course_id: IDS.data, added_at: '2026-10-28T18:00:00.000Z' }] },
+    ],
+    support_requests: [
+      { id: IDS.supportAnswered, user_id: IDS.learner, topic: 'billing', body: 'Can I get a copy of my last receipt?', created_at: '2026-10-20T09:00:00.000Z', status: 'answered', replies: [{ staff_id: IDS.staff, body: 'It is on the Subscription page.', created_at: '2026-10-20T11:30:00.000Z' }], answered_at: '2026-10-20T11:30:00.000Z' },
+      { id: IDS.supportOpen, user_id: IDS.learner, topic: 'certificate', body: 'Will I get a certificate for Cloud Foundations?', created_at: '2026-10-30T16:00:00.000Z', status: 'open', replies: [], answered_at: null },
     ],
   };
 }

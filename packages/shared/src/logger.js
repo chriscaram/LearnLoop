@@ -37,6 +37,8 @@ export const EVENT_NAMES = Object.freeze([
   'feature_flag_changed',
   'cart_item_added',
   'cart_item_removed',
+  'support_request_created',
+  'support_reply_sent',
 ]);
 const EVENT_SET = new Set(EVENT_NAMES);
 const ACTOR_TYPES = new Set(['learner', 'staff', 'system']);

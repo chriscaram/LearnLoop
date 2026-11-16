@@ -67,7 +67,7 @@ function UserMenu({ user, onLogout }) {
             {item('/cart', 'My cart')}
             {item('/my-learning?tab=wishlist', 'Wishlist')}
           </div>
-          {!isStaff && <div className="menu-group">{item('/notifications', 'Notifications')}{item('/subscription', 'Subscription')}</div>}
+          {!isStaff && <div className="menu-group">{item('/notifications', 'Notifications')}{item('/subscription', 'Subscription')}{item('/help', 'Help and support')}</div>}
           <div className="menu-group">
             <button type="button" role="menuitem" onClick={() => { setOpen(false); onLogout(); }}>Log out</button>
           </div>
@@ -148,7 +148,7 @@ export function Footer() {
         </div>
         <div>
           <h2>Discover LearnLoop</h2>
-          <ul><li><a href="#main">Teach on LearnLoop</a></li><li><a href="#main">Get the app</a></li><li><a href="#main">Help and support</a></li><li><a href="#main">Affiliate</a></li></ul>
+          <ul><li><a href="#main">Teach on LearnLoop</a></li><li><a href="#main">Get the app</a></li><li><Link to="/help">Help and support</Link></li><li><a href="#main">Affiliate</a></li></ul>
         </div>
         <div>
           <h2>LearnLoop for Business</h2>
