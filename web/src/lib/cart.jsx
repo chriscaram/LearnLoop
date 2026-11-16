@@ -1,5 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { courseMeta } from '../data/catalog.js';
+import { api } from './api.js';
+import { addOnServer, fromServerCart, mergeIntoServer, readServerCart, removeOnServer, snapshot } from './cart-sync.js';
+import { useSession } from './session.jsx';
 
 const CartContext = createContext(null);
 const CART_KEY = 'learnloop.cart.v1';
@@ -14,29 +17,63 @@ function load(key) {
   }
 }
 
-/** Only the course summary fields the cart needs to render without refetching. */
-const snapshot = (c) => ({
-  id: c.id, title: c.title, category: c.category, level: c.level,
-  summary: c.summary, lessonCount: c.lessonCount, durationMin: c.durationMin,
-});
-
-/** Shopping cart and wishlist, kept in localStorage (client-side only). */
+/**
+ * Shopping cart and wishlist. Signed out, the cart is kept in localStorage; at sign-in
+ * it is merged into the account's cart once, and from then on the server holds it.
+ * The wishlist stays in this browser.
+ */
 export function CartProvider({ children }) {
+  const { user } = useSession();
   const [items, setItems] = useState(() => load(CART_KEY));
   const [wishlist, setWishlist] = useState(() => load(WISHLIST_KEY));
+  const syncedFor = useRef(null); // user id whose server cart is loaded
+  const signedIn = useRef(false);
 
-  useEffect(() => { localStorage.setItem(CART_KEY, JSON.stringify(items)); }, [items]);
+  useEffect(() => { if (user === null) localStorage.setItem(CART_KEY, JSON.stringify(items)); }, [items, user]);
   useEffect(() => { localStorage.setItem(WISHLIST_KEY, JSON.stringify(wishlist)); }, [wishlist]);
+
+  const refresh = useCallback(() => {
+    if (!signedIn.current) return Promise.resolve();
+    return readServerCart(api).then((cart) => setItems(fromServerCart(cart))).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (user === undefined) return;
+    if (!user) {
+      signedIn.current = false;
+      if (syncedFor.current) {
+        syncedFor.current = null;
+        setItems([]);
+      }
+      return;
+    }
+    if (syncedFor.current === user.id) return;
+    syncedFor.current = user.id;
+    signedIn.current = true;
+    mergeIntoServer(load(CART_KEY), api)
+      .then((cart) => {
+        setItems(fromServerCart(cart));
+        localStorage.removeItem(CART_KEY);
+      })
+      .catch(() => {});
+  }, [user]);
 
   const inCart = useCallback((id) => items.some((c) => c.id === id), [items]);
   const inWishlist = useCallback((id) => wishlist.some((c) => c.id === id), [wishlist]);
 
   const add = useCallback((course) => {
     setItems((list) => (list.some((c) => c.id === course.id) ? list : [...list, snapshot(course)]));
-  }, []);
-  const remove = useCallback((id) => setItems((list) => list.filter((c) => c.id !== id)), []);
-  const removeMany = useCallback((ids) => setItems((list) => list.filter((c) => !ids.includes(c.id))), []);
-  const clear = useCallback(() => setItems([]), []);
+    if (signedIn.current) addOnServer(api, course.id).then((cart) => setItems(fromServerCart(cart))).catch(refresh);
+  }, [refresh]);
+  const remove = useCallback((id) => {
+    setItems((list) => list.filter((c) => c.id !== id));
+    if (signedIn.current) removeOnServer(api, id).then((cart) => setItems(fromServerCart(cart))).catch(refresh);
+  }, [refresh]);
+  /** After a purchase: the server already took the courses out, so only the view changes. */
+  const removeMany = useCallback((ids) => {
+    setItems((list) => list.filter((c) => !ids.includes(c.id)));
+    refresh();
+  }, [refresh]);
 
   const toggleWishlist = useCallback((course) => {
     setWishlist((list) => (list.some((c) => c.id === course.id)
@@ -45,9 +82,9 @@ export function CartProvider({ children }) {
   }, []);
 
   const moveToWishlist = useCallback((course) => {
-    setItems((list) => list.filter((c) => c.id !== course.id));
+    remove(course.id);
     setWishlist((list) => (list.some((c) => c.id === course.id) ? list : [...list, snapshot(course)]));
-  }, []);
+  }, [remove]);
 
   const totals = useMemo(() => {
     const total = items.reduce((sum, c) => sum + courseMeta(c.id).price, 0);
@@ -56,8 +93,8 @@ export function CartProvider({ children }) {
   }, [items]);
 
   const value = useMemo(() => ({
-    items, wishlist, totals, inCart, inWishlist, add, remove, removeMany, clear, toggleWishlist, moveToWishlist,
-  }), [items, wishlist, totals, inCart, inWishlist, add, remove, removeMany, clear, toggleWishlist, moveToWishlist]);
+    items, wishlist, totals, inCart, inWishlist, add, remove, removeMany, toggleWishlist, moveToWishlist, refresh,
+  }), [items, wishlist, totals, inCart, inWishlist, add, remove, removeMany, toggleWishlist, moveToWishlist, refresh]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

@@ -25,6 +25,7 @@ export const errorMessage = (error) => {
     not_enrolled: 'Enrol in this course to open its lessons.',
     already_subscribed: 'You already have an active subscription.',
     no_active_subscription: 'There is no active subscription to cancel.',
+    already_enrolled: 'You are already enrolled in this course.',
   };
   return messages[error?.code] ?? 'Something went wrong. Please try again.';
 };

@@ -2,6 +2,7 @@ import { isEnabled } from '@learnloop/shared/flags';
 import { notFound, ok } from '@learnloop/shared/http';
 import { logEvent } from '@learnloop/shared/logger';
 import { CATEGORIES, getCourseDetail, listCatalog } from './services/catalog.js';
+import { addToCart, getCart, removeFromCart } from './services/cart.js';
 import { enrol, isEnrolled, listUserEnrolments } from './services/enrolment.js';
 
 async function courses({ query, user }) {
@@ -29,9 +30,24 @@ async function myEnrolments({ user }) {
   return ok({ enrolments: list.map((e) => ({ courseId: e.course_id, enrolledAt: e.enrolled_at })) });
 }
 
+async function myCart({ user }) {
+  return ok({ cart: await getCart(user.userId) });
+}
+
+async function addCartItem({ user, body, now }) {
+  return ok({ cart: await addToCart(user.userId, body.courseId, now) });
+}
+
+async function removeCartItem({ user, params }) {
+  return ok({ cart: await removeFromCart(user.userId, params.courseId) });
+}
+
 export const routes = [
   { method: 'GET', path: '/api/courses', auth: 'public', handler: courses },
   { method: 'GET', path: '/api/courses/{courseId}', auth: 'public', handler: course },
   { method: 'POST', path: '/api/courses/{courseId}/enrol', auth: 'user', handler: enrolInCourse },
   { method: 'GET', path: '/api/me/enrolments', auth: 'user', handler: myEnrolments },
+  { method: 'GET', path: '/api/me/cart', auth: 'user', handler: myCart },
+  { method: 'POST', path: '/api/me/cart/items', auth: 'user', handler: addCartItem },
+  { method: 'DELETE', path: '/api/me/cart/items/{courseId}', auth: 'user', handler: removeCartItem },
 ];

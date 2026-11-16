@@ -72,7 +72,7 @@ test('event line has contract fields and uses the closed event list', () => {
   assert.equal(r.outcome, 'ok');
   assert.equal(r.value, 80);
   assert.throws(() => buildEventRecord({ event: 'something_else' }), TypeError);
-  assert.equal(EVENT_NAMES.length, 19);
+  assert.equal(EVENT_NAMES.length, 21);
 });
 
 test('failed events carry error.type and level warn; staff role maps to staff actor', () => {

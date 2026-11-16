@@ -198,6 +198,9 @@ export function fixtureData() {
       { id: IDS.ntfUnread, user_id: IDS.learner, type: 'payment_receipt', title: 'Payment received', body: 'b', link: '/subscription', created_at: '2026-10-10T08:00:00.000Z', read_at: null },
     ],
     quiz_results: [],
+    carts: [
+      { user_id: IDS.learner, items: [{ course_id: IDS.data, added_at: '2026-10-28T18:00:00.000Z' }] },
+    ],
   };
 }
 

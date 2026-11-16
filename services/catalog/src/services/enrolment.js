@@ -4,6 +4,7 @@ import { logEvent } from '@learnloop/shared/logger';
 import { getSubscription, isActive } from '@learnloop/billing/services/subscription';
 import { findCourseById } from '../repositories/courses.js';
 import { insertEnrolmentOnce, listEnrolmentsForUser } from '../repositories/enrolments.js';
+import { clearPurchasedCourse } from './cart.js';
 
 export async function listUserEnrolments(userId) {
   return (await listEnrolmentsForUser(userId)).sort((a, b) => a.enrolled_at.localeCompare(b.enrolled_at));
@@ -13,7 +14,7 @@ export async function isEnrolled(userId, courseId) {
   return (await listEnrolmentsForUser(userId)).some((e) => e.course_id === courseId);
 }
 
-/** Enrols the user; requires an active subscription. Idempotent. */
+/** Enrols the user; requires an active subscription. Idempotent. The course leaves the user's cart. */
 export async function enrol(userId, courseId, now = new Date()) {
   const course = await findCourseById(courseId);
   if (!course) throw notFound('course_not_found');
@@ -25,5 +26,6 @@ export async function enrol(userId, courseId, now = new Date()) {
     enrolled_at: now.toISOString(),
   });
   if (created) logEvent({ event: 'course_enrolled', entityType: 'course', entityId: courseId });
+  await clearPurchasedCourse(userId, courseId);
   return enrolment;
 }

@@ -91,6 +91,7 @@ function PurchaseCard({ course, meta, mine, subscription, onEnrol, busy, error }
 export function CourseDetailPage() {
   const { courseId } = useParams();
   const { user, progress, loadProgress, invalidateProgress } = useSession();
+  const { refresh: refreshCart } = useCart();
   const navigate = useNavigate();
   const [course, setCourse] = useState(null);
   const [related, setRelated] = useState([]);
@@ -122,6 +123,7 @@ export function CourseDetailPage() {
     try {
       await api(`/api/courses/${courseId}/enrol`, { method: 'POST' });
       invalidateProgress();
+      refreshCart();
       navigate(`/lessons/${course.lessons[0].id}`);
     } catch (e) {
       setError(errorMessage(e));

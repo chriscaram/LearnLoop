@@ -10,7 +10,9 @@ test('route table matches templates and prefers static segments', () => {
   assert.equal(m.route.path, '/api/lessons/{lessonId}');
   assert.deepEqual(m.pathParameters, { lessonId: 'les_0123456789ab' });
   assert.equal(matchRoute(table, 'DELETE', '/api/me'), null);
-  assert.equal(table.length, 22);
+  const cart = matchRoute(table, 'DELETE', '/api/me/cart/items/crs_0123456789ab');
+  assert.equal(cart.route.path, '/api/me/cart/items/{courseId}');
+  assert.equal(table.length, 25);
 });
 
 test('end to end against the seed data: sign in, read progress and notifications', async () => {
@@ -29,6 +31,11 @@ test('end to end against the seed data: sign in, read progress and notifications
     assert.ok(Array.isArray(progress.courses));
     const unread = await (await fetch(`${base}/api/me/notifications/unread-count`, { headers: { cookie } })).json();
     assert.equal(typeof unread.unread, 'number');
+    const json = { cookie, 'content-type': 'application/json' };
+    const enrolled = new Set((await (await fetch(`${base}/api/me/enrolments`, { headers: { cookie } })).json()).enrolments.map((e) => e.courseId));
+    const course = (await (await fetch(`${base}/api/courses`)).json()).courses.find((c) => !enrolled.has(c.id));
+    const cart = await (await fetch(`${base}/api/me/cart/items`, { method: 'POST', headers: json, body: JSON.stringify({ courseId: course.id }) })).json();
+    assert.ok(cart.cart.items.some((i) => i.courseId === course.id));
   } finally {
     server.close();
     logs.restore();
