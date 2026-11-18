@@ -38,6 +38,8 @@ async function replySupport({ user, params, body, now }) {
 
 async function agentNudges({ now }) {
   return ok(await getNudgeOversight(now));
+}
+
 async function agentOversight({ query, now }) {
   return ok(await loadOversight(now, query));
 }

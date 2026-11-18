@@ -14,7 +14,9 @@ test('route table matches templates and prefers static segments', () => {
   assert.equal(cart.route.path, '/api/me/cart/items/{courseId}');
   assert.equal(matchRoute(table, 'POST', '/api/admin/support-requests/sup_0123456789ab/reply').route.path, '/api/admin/support-requests/{requestId}/reply');
   assert.equal(matchRoute(table, 'GET', '/api/admin/learners/usr_0123456789ab/training').route.path, '/api/admin/learners/{userId}/training');
-  assert.equal(table.length, 30);
+  assert.equal(matchRoute(table, 'GET', '/api/admin/agent-nudges').route.path, '/api/admin/agent-nudges');
+  assert.equal(matchRoute(table, 'GET', '/api/admin/agent-oversight').route.path, '/api/admin/agent-oversight');
+  assert.equal(table.length, 32);
 });
 
 test('end to end against the seed data: sign in, read progress and notifications', async () => {

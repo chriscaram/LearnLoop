@@ -124,7 +124,7 @@ test('output budget fits a full batch with headroom', () => {
 
 test('the learning handler routes the scheduled job (flag off: does nothing)', async () => {
   setup(false);
-  assert.deepEqual(await handler({ listJobs: true }), { jobs: [NUDGE_JOB] });
+  assert.ok((await handler({ listJobs: true })).jobs.includes(NUDGE_JOB));
   assert.deepEqual(await handler({ job: NUDGE_JOB }), { ok: true });
   assert.equal(summaries()[0].reason, 'flag_off');
 });

@@ -249,7 +249,7 @@ test('agent oversight: statuses derived on read from agent-marked notifications 
 });
 
 test('HTTP: agent oversight is staff-only and reads existing records', async () => {
-  await env.store.update('notifications', (all) => { all.push({ id: 'ntf_0000000000f9', user_id: IDS.learner, type: 'staff_message', title: 'Back to SQL', body: 'b', link: `/courses/${IDS.data}`, created_at: '2026-11-01T08:00:00.000Z', read_at: null, applied_by_agent: true }); });
+  await env.store.update('notifications', (all) => { all.push({ id: 'ntf_0000000000f9', user_id: IDS.learner, type: 'staff_message', title: 'Back to SQL', body: 'b', link: `/courses/${IDS.data}`, created_at: new Date(Date.now() - 3_600_000).toISOString(), read_at: null, applied_by_agent: true }); });
   const learner = await testSessionCookie({ userId: IDS.learner });
   assert.equal((await handler(apiEvent('GET /api/admin/agent-oversight', { cookie: learner }))).statusCode, 403);
   const staff = await testSessionCookie({ userId: IDS.staff, role: 'staff' });
