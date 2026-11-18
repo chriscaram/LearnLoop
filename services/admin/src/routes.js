@@ -1,4 +1,5 @@
 import { ok } from '@learnloop/shared/http';
+import { getNudgeOversight } from '@learnloop/learning/agents/nudgeRecords';
 import { getFlags, updateFlag } from './services/flags.js';
 import { listLearners, listOrganizationNames } from './services/learners.js';
 import { sendStaffMessage } from './services/messages.js';
@@ -34,6 +35,10 @@ async function replySupport({ user, params, body, now }) {
   return ok(await replyToLearner(user.userId, params.requestId, body, now));
 }
 
+async function agentNudges({ now }) {
+  return ok(await getNudgeOversight(now));
+}
+
 export const routes = [
   { method: 'GET', path: '/api/admin/learners', auth: 'staff', handler: learners },
   { method: 'GET', path: '/api/admin/learners/{userId}/training', auth: 'staff', handler: training },
@@ -42,4 +47,5 @@ export const routes = [
   { method: 'PUT', path: '/api/admin/flags/{flagKey}', auth: 'staff', handler: putFlag },
   { method: 'GET', path: '/api/admin/support-requests', auth: 'staff', handler: supportRequests },
   { method: 'POST', path: '/api/admin/support-requests/{requestId}/reply', auth: 'staff', handler: replySupport },
+  { method: 'GET', path: '/api/admin/agent-nudges', auth: 'staff', handler: agentNudges },
 ];
