@@ -19,7 +19,7 @@ const NOW = new Date('2026-11-03T12:00:00Z');
 test('routes table (all staff-only)', () => {
   checkRoutesTable(assert, routes, { service: 'admin', expected: [
     'GET /api/admin/learners', 'GET /api/admin/learners/{userId}/training', 'POST /api/admin/learners/{userId}/message', 'GET /api/admin/flags', 'PUT /api/admin/flags/{flagKey}',
-    'GET /api/admin/support-requests', 'POST /api/admin/support-requests/{requestId}/reply', 'GET /api/admin/agent-nudges', 'GET /api/admin/agent-oversight',
+    'GET /api/admin/support-requests', 'POST /api/admin/support-requests/{requestId}/reply', 'GET /api/admin/agent-nudges', 'GET /api/admin/agent-oversight', 'GET /api/admin/agent-follow-ups',
   ] });
   assert.ok(routes.every((r) => r.auth === 'staff'));
 });
@@ -215,7 +215,7 @@ test('HTTP: an employee\'s training is staff-only and writes one request line wi
 
 test('agent oversight: statuses derived on read from agent-marked notifications only', () => {
   const user = (id, name) => ({ id, name, email: `${name.toLowerCase()}@example.com`, role: 'learner' });
-  const ntf = (id, userId, createdAt, readAt, extra = { applied_by_agent: true }) => ({ id, user_id: userId, type: 'staff_message', title: 't', body: 'b', link: '/courses/x', created_at: createdAt, read_at: readAt, ...extra });
+  const ntf = (id, userId, createdAt, readAt, extra = { applied_by_agent: true, agent_flag: 'ga-find_95e2c1e5a8e6' }) => ({ id, user_id: userId, type: 'staff_message', title: 't', body: 'b', link: '/courses/x', created_at: createdAt, read_at: readAt, ...extra });
   const data = {
     users: [user('usr_a', 'Ann'), user('usr_b', 'Bo'), user('usr_c', 'Cy'), user('usr_d', 'Di')],
     notifications: [
@@ -249,7 +249,7 @@ test('agent oversight: statuses derived on read from agent-marked notifications 
 });
 
 test('HTTP: agent oversight is staff-only and reads existing records', async () => {
-  await env.store.update('notifications', (all) => { all.push({ id: 'ntf_0000000000f9', user_id: IDS.learner, type: 'staff_message', title: 'Back to SQL', body: 'b', link: `/courses/${IDS.data}`, created_at: new Date(Date.now() - 3_600_000).toISOString(), read_at: null, applied_by_agent: true }); });
+  await env.store.update('notifications', (all) => { all.push({ id: 'ntf_0000000000f9', user_id: IDS.learner, type: 'staff_message', title: 'Back to SQL', body: 'b', link: `/courses/${IDS.data}`, created_at: new Date(Date.now() - 3_600_000).toISOString(), read_at: null, applied_by_agent: true, agent_flag: 'ga-find_95e2c1e5a8e6' }); });
   const learner = await testSessionCookie({ userId: IDS.learner });
   assert.equal((await handler(apiEvent('GET /api/admin/agent-oversight', { cookie: learner }))).statusCode, 403);
   const staff = await testSessionCookie({ userId: IDS.staff, role: 'staff' });

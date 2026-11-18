@@ -20,7 +20,7 @@ export function deriveMessages({ notifications, activity, enrolments }) {
   for (const a of activity) add(a.user_id, a.last_activity_at);
   for (const e of enrolments) add(e.user_id, e.enrolled_at);
   return notifications
-    .filter((n) => n.applied_by_agent === true)
+    .filter((n) => n.applied_by_agent === true && n.agent_flag === GA_OVERSIGHT)
     .map((n) => ({
       id: n.id,
       userId: n.user_id,

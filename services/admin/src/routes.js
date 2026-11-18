@@ -6,6 +6,7 @@ import { sendStaffMessage } from './services/messages.js';
 import { listSupportQueue, replyToLearner } from './services/support.js';
 import { getLearnerTraining } from './services/training.js';
 import { loadOversight } from './services/agentOversight.js';
+import { oversightRoutes } from './agents/followUpOversight.js';
 
 async function learners({ query, now }) {
   const [rows, organizations] = await Promise.all([listLearners(now, { organizationId: query.organization }), listOrganizationNames()]);
@@ -54,4 +55,6 @@ export const routes = [
   { method: 'POST', path: '/api/admin/support-requests/{requestId}/reply', auth: 'staff', handler: replySupport },
   { method: 'GET', path: '/api/admin/agent-nudges', auth: 'staff', handler: agentNudges },
   { method: 'GET', path: '/api/admin/agent-oversight', auth: 'staff', handler: agentOversight },
+  // Declared here, not only in the handler: API Gateway's routes are built from this table.
+  ...oversightRoutes,
 ];
