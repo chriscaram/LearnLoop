@@ -93,7 +93,8 @@ export function Header() {
         <SearchBar />
         <nav className="header-links" aria-label="Main">
           <Link to="/subscription" className="nav-text hide-md">Plans &amp; Pricing</Link>
-          {isStaff && <NavLink to="/admin" className="nav-text">Admin</NavLink>}
+          {isStaff && <NavLink to="/admin" end className="nav-text">Admin</NavLink>}
+          {isStaff && <NavLink to="/admin/agent-follow-ups" className="nav-text">AI follow-ups</NavLink>}
           {user && !isStaff && <NavLink to="/my-learning" className="nav-text">My learning</NavLink>}
         </nav>
         <div className="header-actions">
