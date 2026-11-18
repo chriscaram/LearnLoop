@@ -43,7 +43,7 @@ for (const { environment, template } of CASES) {
       assert.equal(p.Runtime, 'nodejs22.x');
       assert.deepEqual(p.Architectures, ['arm64']);
       assert.equal(p.MemorySize, 512);
-      assert.equal(p.Timeout, p.FunctionName === `${prefix}-learning` ? 120 : 10);
+      assert.equal(p.Timeout, [`${prefix}-learning`, `${prefix}-admin`].includes(p.FunctionName) ? 120 : 10);
       assert.equal(p.LoggingConfig.LogFormat, 'JSON');
       for (const key of ['APP_ENV', 'APP_VERSION', 'STATE_BUCKET', 'FLAGS_PARAMETER', 'LOG_PSEUDONYM_SALT_PARAMETER']) {
         assert.ok(key in p.Environment.Variables, `${p.FunctionName} ${key}`);

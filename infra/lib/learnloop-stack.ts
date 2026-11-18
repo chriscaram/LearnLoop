@@ -26,10 +26,11 @@ const LOG_BUCKET_DAYS = 120;
 /**
  * Function timeouts. API requests are cut at 10 s by the shared handler
  * whatever the function timeout is; a longer timeout only gives scheduled
- * jobs on that function more time (learning: re-engagement nudges).
+ * jobs on that function more time (learning: re-engagement nudges; admin:
+ * required-training follow-ups).
  */
 const DEFAULT_TIMEOUT_SECONDS = 10;
-export const FUNCTION_TIMEOUT_SECONDS: Record<string, number> = { learning: 120 };
+export const FUNCTION_TIMEOUT_SECONDS: Record<string, number> = { learning: 120, admin: 120 };
 export const CLOUDFRONT_LOG_PREFIX = 'cloudfront/';
 
 export {
