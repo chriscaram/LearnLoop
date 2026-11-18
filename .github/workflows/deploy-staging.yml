@@ -114,6 +114,9 @@ jobs:
             aws lambda invoke --function-name "$fn" --cli-binary-format raw-in-base64-out \
               --payload '{"listJobs":true}' "list-$svc.json" > /dev/null
             for job in $(jq -r '.jobs // [] | .[]' "list-$svc.json"); do
+              # The platform's own daily jobs (subscription renewals) keep their schedule;
+              # only the jobs the deployed features add are run once here.
+              case "$job" in renew_subscriptions) echo "skipping $fn $job (runs on its daily schedule)"; continue ;; esac
               payload="$(jq -cn --arg j "$job" '{job: $j}')"
               echo "invoking $fn with $payload"
               entry="$(jq -cn --arg s "$svc" --arg j "$job" '{service: $s, job: $j}')"
