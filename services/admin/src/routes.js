@@ -4,6 +4,7 @@ import { listLearners, listOrganizationNames } from './services/learners.js';
 import { sendStaffMessage } from './services/messages.js';
 import { listSupportQueue, replyToLearner } from './services/support.js';
 import { getLearnerTraining } from './services/training.js';
+import { loadOversight } from './services/agentOversight.js';
 
 async function learners({ query, now }) {
   const [rows, organizations] = await Promise.all([listLearners(now, { organizationId: query.organization }), listOrganizationNames()]);
@@ -34,6 +35,10 @@ async function replySupport({ user, params, body, now }) {
   return ok(await replyToLearner(user.userId, params.requestId, body, now));
 }
 
+async function agentOversight({ query, now }) {
+  return ok(await loadOversight(now, query));
+}
+
 export const routes = [
   { method: 'GET', path: '/api/admin/learners', auth: 'staff', handler: learners },
   { method: 'GET', path: '/api/admin/learners/{userId}/training', auth: 'staff', handler: training },
@@ -42,4 +47,5 @@ export const routes = [
   { method: 'PUT', path: '/api/admin/flags/{flagKey}', auth: 'staff', handler: putFlag },
   { method: 'GET', path: '/api/admin/support-requests', auth: 'staff', handler: supportRequests },
   { method: 'POST', path: '/api/admin/support-requests/{requestId}/reply', auth: 'staff', handler: replySupport },
+  { method: 'GET', path: '/api/admin/agent-oversight', auth: 'staff', handler: agentOversight },
 ];
