@@ -5,6 +5,7 @@ import { listLearners, listOrganizationNames } from './services/learners.js';
 import { sendStaffMessage } from './services/messages.js';
 import { listSupportQueue, replyToLearner } from './services/support.js';
 import { getLearnerTraining } from './services/training.js';
+import { loadOversight } from './services/agentOversight.js';
 
 async function learners({ query, now }) {
   const [rows, organizations] = await Promise.all([listLearners(now, { organizationId: query.organization }), listOrganizationNames()]);
@@ -37,6 +38,8 @@ async function replySupport({ user, params, body, now }) {
 
 async function agentNudges({ now }) {
   return ok(await getNudgeOversight(now));
+async function agentOversight({ query, now }) {
+  return ok(await loadOversight(now, query));
 }
 
 export const routes = [
@@ -48,4 +51,5 @@ export const routes = [
   { method: 'GET', path: '/api/admin/support-requests', auth: 'staff', handler: supportRequests },
   { method: 'POST', path: '/api/admin/support-requests/{requestId}/reply', auth: 'staff', handler: replySupport },
   { method: 'GET', path: '/api/admin/agent-nudges', auth: 'staff', handler: agentNudges },
+  { method: 'GET', path: '/api/admin/agent-oversight', auth: 'staff', handler: agentOversight },
 ];

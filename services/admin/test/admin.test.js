@@ -6,6 +6,7 @@ import { sendStaffMessage, validateMessage } from '../src/services/messages.js';
 import { getFlags, updateFlag } from '../src/services/flags.js';
 import { listSupportQueue, replyToLearner } from '../src/services/support.js';
 import { getLearnerTraining, trainingState, TRAINING_STATUSES } from '../src/services/training.js';
+import { GA_OVERSIGHT, buildOversight } from '../src/services/agentOversight.js';
 import { findOrganizationById, listOrganizations } from '../src/repositories/organizations.js';
 import { listAssignmentsForOrganization, listAssignmentsForUser } from '../src/repositories/trainingAssignments.js';
 import { routes } from '../src/routes.js';
@@ -18,7 +19,7 @@ const NOW = new Date('2026-11-03T12:00:00Z');
 test('routes table (all staff-only)', () => {
   checkRoutesTable(assert, routes, { service: 'admin', expected: [
     'GET /api/admin/learners', 'GET /api/admin/learners/{userId}/training', 'POST /api/admin/learners/{userId}/message', 'GET /api/admin/flags', 'PUT /api/admin/flags/{flagKey}',
-    'GET /api/admin/support-requests', 'POST /api/admin/support-requests/{requestId}/reply', 'GET /api/admin/agent-nudges',
+    'GET /api/admin/support-requests', 'POST /api/admin/support-requests/{requestId}/reply', 'GET /api/admin/agent-nudges', 'GET /api/admin/agent-oversight',
   ] });
   assert.ok(routes.every((r) => r.auth === 'staff'));
 });
@@ -210,4 +211,52 @@ test('HTTP: an employee\'s training is staff-only and writes one request line wi
   const [line] = env.logs.records.filter((r) => r.kind === 'request');
   assert.deepEqual([line['service.name'], line['http.method'], line['http.route'], line['http.status_code']], ['admin', 'GET', '/api/admin/learners/{userId}/training', 200]);
   assert.deepEqual(env.logs.events(), [], 'reading an employee\'s training writes no business event');
+});
+
+test('agent oversight: statuses derived on read from agent-marked notifications only', () => {
+  const user = (id, name) => ({ id, name, email: `${name.toLowerCase()}@example.com`, role: 'learner' });
+  const ntf = (id, userId, createdAt, readAt, extra = { applied_by_agent: true }) => ({ id, user_id: userId, type: 'staff_message', title: 't', body: 'b', link: '/courses/x', created_at: createdAt, read_at: readAt, ...extra });
+  const data = {
+    users: [user('usr_a', 'Ann'), user('usr_b', 'Bo'), user('usr_c', 'Cy'), user('usr_d', 'Di')],
+    notifications: [
+      ntf('ntf_1', 'usr_a', '2026-10-20T08:00:00.000Z', '2026-10-20T09:00:00.000Z'),
+      ntf('ntf_2', 'usr_b', '2026-10-21T08:00:00.000Z', '2026-10-21T10:00:00.000Z'),
+      ntf('ntf_3', 'usr_c', '2026-11-02T08:00:00.000Z', null),
+      ntf('ntf_4', 'usr_d', '2026-10-01T08:00:00.000Z', null),
+      ntf('ntf_5', 'usr_d', '2026-10-02T08:00:00.000Z', '2026-10-02T09:00:00.000Z', {}),
+    ],
+    activity: [
+      { user_id: 'usr_a', course_id: 'crs_x', last_activity_at: '2026-10-22T08:00:00.000Z' },
+      { user_id: 'usr_b', course_id: 'crs_x', last_activity_at: '2026-10-01T08:00:00.000Z' },
+    ],
+    enrolments: [],
+  };
+  const view = buildOversight(data, NOW, { from: '2026-10-20', to: '2026-10-22' });
+  assert.equal(GA_OVERSIGHT, 'ga-find_95e2c1e5a8e6');
+  assert.deepEqual(view.people.map((p) => [p.name, p.status]), [['Cy', 'Sent'], ['Bo', 'Opened'], ['Ann', 'Came back'], ['Di', 'No response yet']]);
+  assert.deepEqual(view.stats, { sent: 4, opened: 2, cameBack: 1 });
+  assert.deepEqual(view.daily, [
+    { date: '2026-10-20', sent: 1, opened: 1, cameBack: 0 },
+    { date: '2026-10-21', sent: 1, opened: 1, cameBack: 0 },
+    { date: '2026-10-22', sent: 0, opened: 0, cameBack: 1 },
+  ]);
+  assert.deepEqual(buildOversight(data, NOW, { status: 'Opened' }).people.map((p) => p.name), ['Bo']);
+  assert.deepEqual(buildOversight(data, NOW, { q: 'ann' }).people.map((p) => p.name), ['Ann']);
+  assert.deepEqual(buildOversight(data, NOW, { userId: 'usr_d' }).messages.map((m) => [m.id, m.appliedByAgent]), [['ntf_4', true]]);
+  assert.equal(buildOversight(data, NOW, {}).daily.length, 14);
+  assert.throws(() => buildOversight(data, NOW, { status: 'Bounced' }), (e) => e.status === 400);
+  assert.throws(() => buildOversight(data, NOW, { from: '2026-10-22', to: '2026-10-20' }), (e) => e.status === 400);
+});
+
+test('HTTP: agent oversight is staff-only and reads existing records', async () => {
+  await env.store.update('notifications', (all) => { all.push({ id: 'ntf_0000000000f9', user_id: IDS.learner, type: 'staff_message', title: 'Back to SQL', body: 'b', link: `/courses/${IDS.data}`, created_at: '2026-11-01T08:00:00.000Z', read_at: null, applied_by_agent: true }); });
+  const learner = await testSessionCookie({ userId: IDS.learner });
+  assert.equal((await handler(apiEvent('GET /api/admin/agent-oversight', { cookie: learner }))).statusCode, 403);
+  const staff = await testSessionCookie({ userId: IDS.staff, role: 'staff' });
+  const res = await handler(apiEvent('GET /api/admin/agent-oversight', { cookie: staff, query: { userId: IDS.learner } }));
+  env.logs.restore();
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.body);
+  assert.deepEqual(body.people.map((p) => [p.name, p.status]), [['Lee Learner', 'Sent']]);
+  assert.deepEqual(body.messages.map((m) => m.id), ['ntf_0000000000f9']);
 });
