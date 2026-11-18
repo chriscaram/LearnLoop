@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// npm run state:reset
-// Restores the state bucket from data/seed/*.json. Lambdas pick the change up on
+// npm run state:reset   (LEARNLOOP_STACK=LearnLoopStaging npm run state:reset for staging)
+// Restores the state bucket of the stack from data/seed/*.json. Lambdas pick the change up on
 // their next read (the S3 ETags change, so cached copies are refreshed).
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { region, stateBucket } from './stack.js';

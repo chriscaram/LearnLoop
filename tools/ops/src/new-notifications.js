@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // npm run notifications:since -- <since ISO time> [--json]
-// Lists the notifications created at or after <since> in the deployed state
-// bucket, with the recipient's demo email, so an operator can see whom a job
+// Lists the notifications created at or after <since> in the state bucket of
+// the stack named by LEARNLOOP_STACK (default LearnLoopProd), with the recipient's demo email, so an operator can see whom a job
 // messaged and sign in as one of them. Runs with the operator's AWS
 // credentials. The preview workflow uses --json and puts only the names in the PR comment.
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
