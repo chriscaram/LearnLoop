@@ -1,9 +1,11 @@
 name: Deploy (reusable)
 
-# Deploys a ref to the LearnLoopProd stack. Called by deploy.yml (main),
-# preview.yml (a verified ga/* branch) and preview-reset.yml (back to main).
-# Callers own the `deploy-prod` concurrency group: declaring it here as well
-# would make the called workflow wait for its own caller.
+# Deploys a ref to a LearnLoop stack (LearnLoopProd unless `stack` says
+# otherwise). Called by deploy.yml (main), preview.yml (a verified ga/* branch)
+# and preview-reset.yml (back to main), all on LearnLoopProd, and by
+# deploy-staging.yml on LearnLoopStaging.
+# Callers own the concurrency group (`deploy-prod`, `deploy-staging`): declaring
+# it here as well would make the called workflow wait for its own caller.
 
 on:
   workflow_call:
@@ -16,6 +18,11 @@ on:
         description: GitHub environment of the deploy job (prod or preview; part of the OIDC subject)
         required: true
         type: string
+      stack:
+        description: Stack to deploy (LearnLoopProd or LearnLoopStaging)
+        required: false
+        type: string
+        default: LearnLoopProd
     outputs:
       url:
         description: CloudFront URL of the app
@@ -35,6 +42,7 @@ jobs:
       id-token: write # GitHub OIDC -> AWS
     env:
       AWS_REGION: us-east-1
+      STACK: ${{ inputs.stack }}
     outputs:
       url: ${{ steps.outputs.outputs.url }}
       version: ${{ steps.outputs.outputs.version }}
@@ -65,8 +73,9 @@ jobs:
           SES_SENDER: ${{ vars.SES_SENDER }}
           EMAIL_RECIPIENT_OVERRIDE: ${{ vars.EMAIL_RECIPIENT_OVERRIDE }}
         run: |
+          [[ "$STACK" =~ ^LearnLoop(Prod|Staging)$ ]] || { echo "::error::unknown stack '$STACK'"; exit 1; }
           APP_VERSION="$(git rev-parse --short=7 HEAD)"
-          npx cdk deploy LearnLoopProd \
+          npx cdk deploy "$STACK" \
             --require-approval never \
             -c appVersion="$APP_VERSION" \
             --parameters sesSender="$SES_SENDER" \
@@ -76,16 +85,16 @@ jobs:
       - name: Stack outputs
         id: outputs
         run: |
-          echo "url=https://$(jq -r '.LearnLoopProd.DistributionDomainName' cdk-outputs.json)" >> "$GITHUB_OUTPUT"
+          echo "url=https://$(jq -r --arg s "$STACK" '.[$s].DistributionDomainName' cdk-outputs.json)" >> "$GITHUB_OUTPUT"
           echo "version=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Upload web assets
         run: |
-          WEB_BUCKET="$(jq -r '.LearnLoopProd.WebBucketName' cdk-outputs.json)"
+          WEB_BUCKET="$(jq -r --arg s "$STACK" '.[$s].WebBucketName' cdk-outputs.json)"
           aws s3 sync web/dist/assets "s3://$WEB_BUCKET/assets" --cache-control "public,max-age=31536000,immutable"
           aws s3 sync web/dist "s3://$WEB_BUCKET" --exclude "assets/*" --cache-control "no-cache"
 
       - name: Invalidate CloudFront
         run: |
-          DISTRIBUTION_ID="$(jq -r '.LearnLoopProd.DistributionId' cdk-outputs.json)"
+          DISTRIBUTION_ID="$(jq -r --arg s "$STACK" '.[$s].DistributionId' cdk-outputs.json)"
           aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
