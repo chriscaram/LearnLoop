@@ -1,6 +1,7 @@
 import { Aws, CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
+import { ENVIRONMENTS, parameterNames, resourcePrefix, type EnvironmentName } from './environments.js';
 
 export interface GithubOidcStackProps extends StackProps {
   /** "owner/repo" */
@@ -52,28 +53,32 @@ export class GithubOidcStack extends Stack {
       actions: ['sts:AssumeRole'],
       resources: [`arn:${Aws.PARTITION}:iam::${Aws.ACCOUNT_ID}:role/cdk-*`],
     }));
+    // The same permissions for every deployment (prod and staging), each scoped to that
+    // deployment's own stack and resource names.
+    const environments = Object.keys(ENVIRONMENTS) as EnvironmentName[];
+    const each = (arn: (environment: EnvironmentName) => string) => environments.map(arn);
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['cloudformation:DescribeStacks'],
-      resources: [`arn:${Aws.PARTITION}:cloudformation:${Aws.REGION}:${Aws.ACCOUNT_ID}:stack/LearnLoopProd/*`],
+      resources: each((e) => `arn:${Aws.PARTITION}:cloudformation:${Aws.REGION}:${Aws.ACCOUNT_ID}:stack/${ENVIRONMENTS[e].stackName}/*`),
     }));
-    const webBucketArn = `arn:${Aws.PARTITION}:s3:::learnloop-prod-web-${Aws.ACCOUNT_ID}`;
-    role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:ListBucket'], resources: [webBucketArn] }));
-    role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:PutObject', 's3:DeleteObject', 's3:GetObject'], resources: [`${webBucketArn}/*`] }));
+    const webBucketArns = each((e) => `arn:${Aws.PARTITION}:s3:::${resourcePrefix(e)}-web-${Aws.ACCOUNT_ID}`);
+    role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:ListBucket'], resources: webBucketArns }));
+    role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:PutObject', 's3:DeleteObject', 's3:GetObject'], resources: webBucketArns.map((arn) => `${arn}/*`) }));
     role.addToPolicy(new iam.PolicyStatement({ actions: ['cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation'], resources: ['*'] }));
 
-    // preview.yml / preview-reset.yml: feature flags, one-off job runs, demo-data reset and read-back
+    // preview.yml / preview-reset.yml / deploy-staging.yml: feature flags, one-off job runs, data reset and read-back
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['ssm:GetParameter', 'ssm:PutParameter'],
-      resources: [`arn:${Aws.PARTITION}:ssm:${Aws.REGION}:${Aws.ACCOUNT_ID}:parameter/learnloop/prod/feature-flags`],
+      resources: each((e) => `arn:${Aws.PARTITION}:ssm:${Aws.REGION}:${Aws.ACCOUNT_ID}:parameter${parameterNames(e).flags}`),
     }));
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['lambda:InvokeFunction'],
-      resources: [`arn:${Aws.PARTITION}:lambda:${Aws.REGION}:${Aws.ACCOUNT_ID}:function:learnloop-prod-*`],
+      resources: each((e) => `arn:${Aws.PARTITION}:lambda:${Aws.REGION}:${Aws.ACCOUNT_ID}:function:${resourcePrefix(e)}-*`),
     }));
     // s3:GetObject: preview.yml names the learners a job messaged (tools/ops new-notifications.js)
     role.addToPolicy(new iam.PolicyStatement({
       actions: ['s3:PutObject', 's3:GetObject'],
-      resources: [`arn:${Aws.PARTITION}:s3:::learnloop-prod-state-${Aws.ACCOUNT_ID}/*`],
+      resources: each((e) => `arn:${Aws.PARTITION}:s3:::${resourcePrefix(e)}-state-${Aws.ACCOUNT_ID}/*`),
     }));
 
     new CfnOutput(this, 'DeployRoleArn', { value: role.roleArn });

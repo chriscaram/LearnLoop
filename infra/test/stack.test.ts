@@ -242,3 +242,36 @@ nodeTest('GitHub OIDC deploy role is limited to the main branch of one repositor
   assert.ok(idSubjects.includes('repo:example@111/learnloop@222:ref:refs/heads/main'));
   assert.equal(role.Properties.RoleName, 'learnloop-github-deploy');
 });
+
+nodeTest('GitHub OIDC deploy role reaches prod and staging resources by name, nothing broader', () => {
+  const stack = new GithubOidcStack(new App(), 'OidcScope', { env: { account: '123456789012', region: 'us-east-1' }, githubRepo: 'example/learnloop' });
+  const t = Template.fromStack(stack).toJSON();
+  const policy = Object.values(t.Resources as Record<string, any>).find((r) => r.Type === 'AWS::IAM::Policy');
+  // Fn::Join of literal parts and pseudo-parameter refs -> a readable ARN
+  const flat = (v: any): string => (typeof v === 'string' ? v
+    : v['Fn::Join'] ? v['Fn::Join'][1].map(flat).join(v['Fn::Join'][0])
+      : v.Ref ? `{${v.Ref}}` : JSON.stringify(v));
+  const grants = new Map<string, string[]>();
+  for (const s of policy.Properties.PolicyDocument.Statement) {
+    const key = [s.Action].flat().sort().join(',');
+    grants.set(key, [...(grants.get(key) ?? []), ...[s.Resource].flat().map(flat)]);
+  }
+  const arn = (service: string, rest: string) => `arn:{AWS::Partition}:${service}:{AWS::Region}:{AWS::AccountId}:${rest}`;
+  assert.deepEqual(Object.fromEntries(grants), {
+    'sts:AssumeRole': ['arn:{AWS::Partition}:iam::{AWS::AccountId}:role/cdk-*'],
+    'cloudformation:DescribeStacks': [arn('cloudformation', 'stack/LearnLoopProd/*'), arn('cloudformation', 'stack/LearnLoopStaging/*')],
+    's3:ListBucket': ['arn:{AWS::Partition}:s3:::learnloop-prod-web-{AWS::AccountId}', 'arn:{AWS::Partition}:s3:::learnloop-staging-web-{AWS::AccountId}'],
+    's3:DeleteObject,s3:GetObject,s3:PutObject': ['arn:{AWS::Partition}:s3:::learnloop-prod-web-{AWS::AccountId}/*', 'arn:{AWS::Partition}:s3:::learnloop-staging-web-{AWS::AccountId}/*'],
+    'cloudfront:CreateInvalidation,cloudfront:GetInvalidation': ['*'],
+    'ssm:GetParameter,ssm:PutParameter': [arn('ssm', 'parameter/learnloop/prod/feature-flags'), arn('ssm', 'parameter/learnloop/staging/feature-flags')],
+    'lambda:InvokeFunction': [arn('lambda', 'function:learnloop-prod-*'), arn('lambda', 'function:learnloop-staging-*')],
+    's3:GetObject,s3:PutObject': ['arn:{AWS::Partition}:s3:::learnloop-prod-state-{AWS::AccountId}/*', 'arn:{AWS::Partition}:s3:::learnloop-staging-state-{AWS::AccountId}/*'],
+  });
+  // trust is unchanged: the main branch and the prod and preview environments
+  const role = Object.values(t.Resources as Record<string, any>).find((r) => r.Type === 'AWS::IAM::Role');
+  assert.deepEqual(role.Properties.AssumeRolePolicyDocument.Statement[0].Condition.StringLike['token.actions.githubusercontent.com:sub'], [
+    'repo:example/learnloop:ref:refs/heads/main',
+    'repo:example/learnloop:environment:prod',
+    'repo:example/learnloop:environment:preview',
+  ]);
+});
