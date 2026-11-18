@@ -45,12 +45,12 @@ services/<service>/      one deployable Lambda per directory; the directory name
   src/repositories/*.js  the only code that touches the state store
   src/jobs/*.js          scheduled jobs (billing: daily renewals)
   test/*.test.js
-packages/shared/         logger, auth, feature flags, state store, HTTP helpers, test fakes, flag CLI
+packages/shared/         logger, auth, feature flags, state store, HTTP helpers, test fakes
 web/                     React + Vite single-page app
 data/seed/               mock data (JSON), the initial state
 tools/dev/               local development server
-tools/ops/               operator scripts (state:reset)
-infra/                   AWS CDK v2 (TypeScript): the app stack and the GitHub OIDC stack
+tools/ops/               operator scripts (state:reset, flag, notifications:since, list-jobs, list-flags)
+infra/                   AWS CDK v2 (TypeScript): the app stack (prod and staging) and the GitHub OIDC stack
 docs/business/           business documents
 ```
 
@@ -95,7 +95,7 @@ All services log through `packages/shared/src/logger.js`: one JSON object per li
 
 ## Deploying
 
-Everything goes to `us-east-1`. Resources are tagged `Application=learnloop` and `env=prod`.
+Everything goes to `us-east-1`. The prod stack is `LearnLoopProd`; its resources are tagged `Application=learnloop` and `env=prod`. (Staging is a separate stack, see [Staging](#staging).)
 
 1. **Bootstrap CDK** once per account: `cd infra && npx cdk bootstrap aws://<account>/us-east-1`.
 2. **GitHub OIDC deploy role.** The operator deploys this once with local admin credentials:
@@ -107,7 +107,7 @@ Everything goes to `us-east-1`. Resources are tagged `Application=learnloop` and
    # if the account already has the GitHub OIDC provider:
    #   ... -c existingOidcProviderArn=arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
    ```
-   The output `DeployRoleArn` is the role GitHub Actions assumes. It trusts that repository's `main` branch and its `prod` and `preview` environments.
+   The output `DeployRoleArn` is the role GitHub Actions assumes. It trusts that repository's `main` branch and its `prod` and `preview` environments, and may deploy both `LearnLoopProd` and `LearnLoopStaging`.
 3. **SES.** Before the first deploy, verify the sender address and your own recipient address in the SES console (the account stays in the SES sandbox). The stack does not create or verify SES identities. It only takes the sender as the `sesSender` parameter. The `@example.com` demo addresses cannot receive mail, so set `emailRecipientOverride` to your verified recipient to receive all demo email there. If SES rejects a message, the notification is still created and the API reports `"email": "failed"`.
 4. **GitHub configuration** (repository environments `prod` and `preview`), repository variables only, no secrets: `AWS_DEPLOY_ROLE_ARN`, `SES_SENDER`, and optionally `EMAIL_RECIPIENT_OVERRIDE`.
 5. **Push to `main`.** `.github/workflows/deploy.yml` runs the tests, builds `web`, runs `cdk deploy` with `APP_VERSION` set to the short commit SHA, syncs `web/dist` to the web bucket and invalidates CloudFront (the steps live in the reusable `_deploy.yml`; it can also be started by hand). `.github/workflows/ci.yml` runs `npm ci && npm test` on every push and pull request. No long-lived AWS keys are used anywhere.
@@ -118,9 +118,27 @@ CDK stack parameters: `sesSender` and `emailRecipientOverride` (optional).
 
 **Access logs.** The access-logs bucket has ACLs enabled (`BucketOwnerPreferred`) and SSE-S3 encryption, which is what CloudFront standard logging requires. The distribution logs to that bucket under the prefix `cloudfront/`. The stack outputs `AccessLogsBucketName` and `CloudFrontLogPrefix` name the location.
 
-**Previews of `ga/*` branches.** When a `ga/<id>` pull request gets the `ga-verified` label, `preview.yml` deploys the PR merged into the current `main` (`refs/pull/<number>/merge`, so an older branch never rolls back later changes to `main`; a PR that conflicts with `main` is not deployed and gets a comment saying so) to `LearnLoopProd`, switches the flag `ga-<id>` on, runs once every scheduled job the branch registers that `main` does not (found by invoking each function with `{"listJobs": true}`; `node tools/ops/src/list-jobs.js <checkout>` gives the same list from a checkout), and comments the result on the PR, including the names of the learners the jobs messaged (demo data; `npm run notifications:since -- <ISO time>` lists them with their emails, using local AWS credentials). Closing such a PR without merging runs `preview-reset.yml`: it redeploys `main`, switches the flag off and runs `npm run state:reset`. Both can be started by hand from the Actions tab. All deploying workflows share the `deploy-prod` concurrency group.
+**Previews of `ga/*` branches.** When a `ga/<id>` pull request gets the `ga-verified` label, `preview.yml` deploys the PR merged into the current `main` (`refs/pull/<number>/merge`, so an older branch never rolls back later changes to `main`; a PR that conflicts with `main` is not deployed and gets a comment saying so) to `LearnLoopProd`, switches the flag `ga-<id>` on, runs once every scheduled job the branch registers that `main` does not (found by invoking each function with `{"listJobs": true}`; `node tools/ops/src/list-jobs.js <checkout>` gives the same list from a checkout), and comments the result on the PR, including the names of the learners the jobs messaged (demo data; `npm run notifications:since -- <ISO time>` lists them with their emails, using local AWS credentials). Closing such a PR without merging runs `preview-reset.yml`: it redeploys `main`, switches the flag off and runs `npm run state:reset`. Both can be started by hand from the Actions tab. All workflows that deploy prod share the `deploy-prod` concurrency group.
 
 **Offline tests.** `npm test` synthesizes the stacks with asset bundling disabled. It needs no AWS access, no Docker and no esbuild. Real deploys bundle each function locally with esbuild (an `infra` devDependency).
+
+## Staging
+
+`LearnLoopStaging` is a second, independent deployment of the same code: its own CloudFront distribution and URL, HTTP API, functions (`learnloop-staging-*`), buckets (`learnloop-staging-{web,state,access-logs,app-logs}-<account>`), secrets (`learnloop/staging/jwt-secret`, `learnloop/staging/log-pseudonym-salt`, generated by the stack like prod's), flag parameter (`/learnloop/staging/feature-flags`) and state. Its resources are tagged `Application=learnloop-staging` and `env=staging`; prod keeps `Application=learnloop` and `env=prod`. It has the same stack outputs as prod.
+
+- **Deploying.** Push to the `staging` branch, or start **Deploy staging** (`.github/workflows/deploy-staging.yml`) by hand with any ref. It tests and deploys that commit to `LearnLoopStaging`, switches on every `ga-*` flag the deployed code reads (`node tools/ops/src/list-flags.js <checkout>` lists them), runs every scheduled job the staging functions register once (optional when started by hand) and writes the result to the run summary. It uses the `preview` environment and its own `deploy-staging` queue, so it never waits for a prod deploy.
+- **URL.** The `DistributionDomainName` output of the stack (also in the run summary):
+  ```bash
+  aws cloudformation describe-stacks --stack-name LearnLoopStaging \
+    --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue" --output text
+  ```
+- **Operator tools.** Set `LEARNLOOP_STACK=LearnLoopStaging`; without it the tools act on `LearnLoopProd`:
+  ```bash
+  LEARNLOOP_STACK=LearnLoopStaging npm run flag -- list
+  LEARNLOOP_STACK=LearnLoopStaging npm run state:reset
+  LEARNLOOP_STACK=LearnLoopStaging npm run notifications:since -- 2026-11-17T00:00:00Z
+  ```
+- **By hand:** `cd infra && npx cdk deploy LearnLoopStaging --parameters sesSender=<verified sender>`, then sync `web/dist` to the `WebBucketName` output and invalidate the `DistributionId` output, as `_deploy.yml` does.
 
 ## Mock data
 
@@ -142,7 +160,7 @@ The other learner accounts are listed in `data/seed/users.json`.
 
 ## Feature flags
 
-Flags are a JSON map `{ "<flagKey>": { "enabled": true|false } }` in the SSM parameter `/learnloop/prod/feature-flags`. Code calls `isEnabled(flagKey, { userId })` from `packages/shared/src/flags.js`. Values are cached for 30 seconds. An unknown key returns `false`, and so does a read failure (which also logs a warning). It never throws. This is the standard way to ship a feature dark. The example in use is `new_catalog_filters`, which gates the category filter on `/courses`.
+Flags are a JSON map `{ "<flagKey>": { "enabled": true|false } }` in the SSM parameter `/learnloop/prod/feature-flags` (`/learnloop/staging/feature-flags` for staging). Code calls `isEnabled(flagKey, { userId })` from `packages/shared/src/flags.js`. Values are cached for 30 seconds. An unknown key returns `false`, and so does a read failure (which also logs a warning). It never throws. This is the standard way to ship a feature dark. The example in use is `new_catalog_filters`, which gates the category filter on `/courses`.
 
 ```bash
 npm run flag -- list
@@ -171,7 +189,7 @@ At demo traffic the stack stays well under 5 USD a month. The costs are mostly S
 
 ```bash
 cd infra
-npx cdk destroy LearnLoopProd
+npx cdk destroy LearnLoopProd      # and LearnLoopStaging
 npx cdk --app "npx tsx bin/github-oidc.ts" destroy -c githubRepo=<owner>/<repo>
 ```
 
@@ -179,7 +197,7 @@ The four S3 buckets are retained on purpose (logs and state). Empty and delete t
 
 ```bash
 for b in web state access-logs app-logs; do
-  aws s3 rb "s3://learnloop-prod-$b-<account>" --force
+  aws s3 rb "s3://learnloop-prod-$b-<account>" --force   # learnloop-staging-$b-<account> for staging
 done
 ```
 
