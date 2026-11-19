@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "application_logs": [
+    {
+      "bucket": { "infrastructure_name": "AppLogsBucket" },
+      "prefix": "app-logs/",
+      "layout": "service={service}/dt={date}/",
+      "format": "json_lines",
+      "services": ["admin", "billing", "catalog", "identity", "learning", "notifications"]
+    }
+  ],
+  "application_records": {
+    "bucket": { "infrastructure_name": "StateBucket" },
+    "prefix": "state/",
+    "profile": "deadline_completion"
+  }
+}
