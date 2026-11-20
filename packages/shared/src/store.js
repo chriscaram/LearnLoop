@@ -24,6 +24,7 @@ export const DOMAINS = Object.freeze([
   'support_requests',
   'organizations',
   'training_assignments',
+  'agent_drafts',
 ]);
 
 /** Reads within this window reuse the cached copy without a network call. */
