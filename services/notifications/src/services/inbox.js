@@ -5,10 +5,15 @@ import { listNotificationsForUser, insertNotification, setNotificationRead } fro
 /** Transactional notification types. */
 export const NOTIFICATION_TYPES = Object.freeze(['welcome', 'payment_receipt', 'new_course_published', 'staff_message', 'support_reply']);
 
+/** Types only an AI agent creates; every such record is stored with applied_by_agent: true. */
+export const AGENT_NOTIFICATION_TYPES = Object.freeze(['lesson_reminder']);
+
 export const newNotificationId = () => `ntf_${randomBytes(6).toString('hex')}`;
 
-export async function createNotification(userId, { type, title, body, link = null }, now = new Date()) {
-  if (!NOTIFICATION_TYPES.includes(type)) throw new TypeError(`unknown notification type: ${type}`);
+export async function createNotification(userId, { type, title, body, link = null, appliedByAgent = false }, now = new Date()) {
+  const agentType = AGENT_NOTIFICATION_TYPES.includes(type);
+  if (!NOTIFICATION_TYPES.includes(type) && !agentType) throw new TypeError(`unknown notification type: ${type}`);
+  if (agentType && appliedByAgent !== true) throw new TypeError(`notification type ${type} is reserved for agents`);
   const notification = await insertNotification({
     id: newNotificationId(),
     user_id: userId,
@@ -18,6 +23,7 @@ export async function createNotification(userId, { type, title, body, link = nul
     link,
     created_at: now.toISOString(),
     read_at: null,
+    ...(appliedByAgent === true ? { applied_by_agent: true } : {}),
   });
   logEvent({ event: 'notification_created', entityType: 'notification', entityId: notification.id, actorType: 'system' });
   return notification;

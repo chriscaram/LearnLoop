@@ -1,5 +1,6 @@
 import { ok } from '@learnloop/shared/http';
 import { logEvent } from '@learnloop/shared/logger';
+import { listReminderOversight } from './jobs/lessonRemindersOversight.js';
 import { getLessonForLearner, listCourseLessons } from './services/lessons.js';
 import { listProgressOverview, recordLessonProgress } from './services/progress.js';
 import { submitQuiz } from './services/quiz.js';
@@ -27,10 +28,15 @@ async function myProgress({ user }) {
   return ok({ courses });
 }
 
+async function lessonReminders({ now }) {
+  return ok(await listReminderOversight(now));
+}
+
 export const routes = [
   { method: 'GET', path: '/api/courses/{courseId}/lessons', auth: 'user', handler: courseLessons },
   { method: 'GET', path: '/api/lessons/{lessonId}', auth: 'user', handler: lesson },
   { method: 'POST', path: '/api/lessons/{lessonId}/progress', auth: 'user', handler: progress },
   { method: 'POST', path: '/api/lessons/{lessonId}/quiz', auth: 'user', handler: quiz },
   { method: 'GET', path: '/api/me/progress', auth: 'user', handler: myProgress },
+  { method: 'GET', path: '/api/admin/lesson-reminders', auth: 'staff', handler: lessonReminders },
 ];

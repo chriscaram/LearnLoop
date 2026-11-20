@@ -17,7 +17,7 @@ const NOW = new Date('2026-11-03T12:00:00Z');
 test('routes table', () => {
   checkRoutesTable(assert, routes, { service: 'learning', expected: [
     'GET /api/courses/{courseId}/lessons', 'GET /api/lessons/{lessonId}', 'POST /api/lessons/{lessonId}/progress',
-    'POST /api/lessons/{lessonId}/quiz', 'GET /api/me/progress',
+    'POST /api/lessons/{lessonId}/quiz', 'GET /api/me/progress', 'GET /api/admin/lesson-reminders',
   ] });
 });
 
