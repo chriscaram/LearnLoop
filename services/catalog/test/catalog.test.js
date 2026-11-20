@@ -16,6 +16,7 @@ test('routes table', () => {
   checkRoutesTable(assert, routes, { service: 'catalog', expected: [
     'GET /api/courses', 'GET /api/courses/{courseId}', 'POST /api/courses/{courseId}/enrol', 'GET /api/me/enrolments',
     'GET /api/me/cart', 'POST /api/me/cart/items', 'DELETE /api/me/cart/items/{courseId}',
+    'GET /api/admin/agents/cart-follow-up',
   ] });
 });
 

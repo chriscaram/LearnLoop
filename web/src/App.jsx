@@ -14,6 +14,7 @@ import { CartPage } from './pages/Cart.jsx';
 import { CheckoutPage } from './pages/Checkout.jsx';
 import { MyLearningPage } from './pages/MyLearning.jsx';
 import { HelpPage } from './pages/Help.jsx';
+import { CartFollowUpOversightPage } from './pages/CartFollowUpOversight.jsx';
 
 function RequireUser({ children, role }) {
   const { user } = useSession();
@@ -56,6 +57,7 @@ export function App() {
           <Route path="/notifications" element={<RequireUser><Page><NotificationsPage /></Page></RequireUser>} />
           <Route path="/help" element={<RequireUser><Page><HelpPage /></Page></RequireUser>} />
           <Route path="/admin" element={<RequireUser role="staff"><Page><AdminPage /></Page></RequireUser>} />
+          <Route path="/admin/cart-follow-up" element={<RequireUser role="staff"><Page><CartFollowUpOversightPage /></Page></RequireUser>} />
           <Route path="*" element={<Page><h1>Page not found</h1><p>We can’t find the page you’re looking for.</p></Page>} />
         </Routes>
       </main>
