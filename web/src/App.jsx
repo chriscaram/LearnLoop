@@ -10,6 +10,7 @@ import { LessonPage } from './pages/Lesson.jsx';
 import { SubscriptionPage } from './pages/Subscription.jsx';
 import { NotificationsPage } from './pages/Notifications.jsx';
 import { AdminPage } from './pages/Admin.jsx';
+import { AgentOversightPage } from './pages/AgentOversight.jsx';
 import { CartPage } from './pages/Cart.jsx';
 import { CheckoutPage } from './pages/Checkout.jsx';
 import { MyLearningPage } from './pages/MyLearning.jsx';
@@ -56,6 +57,7 @@ export function App() {
           <Route path="/notifications" element={<RequireUser><Page><NotificationsPage /></Page></RequireUser>} />
           <Route path="/help" element={<RequireUser><Page><HelpPage /></Page></RequireUser>} />
           <Route path="/admin" element={<RequireUser role="staff"><Page><AdminPage /></Page></RequireUser>} />
+          <Route path="/admin/agent-outreach" element={<RequireUser role="staff"><Page><AgentOversightPage /></Page></RequireUser>} />
           <Route path="*" element={<Page><h1>Page not found</h1><p>We can’t find the page you’re looking for.</p></Page>} />
         </Routes>
       </main>

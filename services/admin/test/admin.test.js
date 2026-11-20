@@ -18,7 +18,7 @@ const NOW = new Date('2026-11-03T12:00:00Z');
 test('routes table (all staff-only)', () => {
   checkRoutesTable(assert, routes, { service: 'admin', expected: [
     'GET /api/admin/learners', 'GET /api/admin/learners/{userId}/training', 'POST /api/admin/learners/{userId}/message', 'GET /api/admin/flags', 'PUT /api/admin/flags/{flagKey}',
-    'GET /api/admin/support-requests', 'POST /api/admin/support-requests/{requestId}/reply',
+    'GET /api/admin/support-requests', 'POST /api/admin/support-requests/{requestId}/reply', 'GET /api/admin/agent-outreach',
   ] });
   assert.ok(routes.every((r) => r.auth === 'staff'));
 });
