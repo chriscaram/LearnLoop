@@ -3,11 +3,11 @@ import { logEvent } from '@learnloop/shared/logger';
 import { listNotificationsForUser, insertNotification, setNotificationRead } from '../repositories/notifications.js';
 
 /** Transactional notification types. */
-export const NOTIFICATION_TYPES = Object.freeze(['welcome', 'payment_receipt', 'new_course_published', 'staff_message', 'support_reply']);
+export const NOTIFICATION_TYPES = Object.freeze(['welcome', 'payment_receipt', 'new_course_published', 'staff_message', 'support_reply', 'cart_reminder']);
 
 export const newNotificationId = () => `ntf_${randomBytes(6).toString('hex')}`;
 
-export async function createNotification(userId, { type, title, body, link = null }, now = new Date()) {
+export async function createNotification(userId, { type, title, body, link = null, appliedByAgent = false }, now = new Date()) {
   if (!NOTIFICATION_TYPES.includes(type)) throw new TypeError(`unknown notification type: ${type}`);
   const notification = await insertNotification({
     id: newNotificationId(),
@@ -18,6 +18,7 @@ export async function createNotification(userId, { type, title, body, link = nul
     link,
     created_at: now.toISOString(),
     read_at: null,
+    ...(appliedByAgent ? { applied_by_agent: true } : {}),
   });
   logEvent({ event: 'notification_created', entityType: 'notification', entityId: notification.id, actorType: 'system' });
   return notification;

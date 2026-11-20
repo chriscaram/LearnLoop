@@ -4,6 +4,7 @@ import { logEvent } from '@learnloop/shared/logger';
 import { CATEGORIES, getCourseDetail, listCatalog } from './services/catalog.js';
 import { addToCart, getCart, removeFromCart } from './services/cart.js';
 import { enrol, isEnrolled, listUserEnrolments } from './services/enrolment.js';
+import { getCartReminderOversight } from './agents/cartReminderOversight.js';
 
 async function courses({ query, user }) {
   const filtersEnabled = await isEnabled('new_catalog_filters', { userId: user?.userId });
@@ -42,6 +43,10 @@ async function removeCartItem({ user, params }) {
   return ok({ cart: await removeFromCart(user.userId, params.courseId) });
 }
 
+async function cartReminderOversight({ now }) {
+  return ok(await getCartReminderOversight(now));
+}
+
 export const routes = [
   { method: 'GET', path: '/api/courses', auth: 'public', handler: courses },
   { method: 'GET', path: '/api/courses/{courseId}', auth: 'public', handler: course },
@@ -50,4 +55,5 @@ export const routes = [
   { method: 'GET', path: '/api/me/cart', auth: 'user', handler: myCart },
   { method: 'POST', path: '/api/me/cart/items', auth: 'user', handler: addCartItem },
   { method: 'DELETE', path: '/api/me/cart/items/{courseId}', auth: 'user', handler: removeCartItem },
+  { method: 'GET', path: '/api/admin/agents/cart-reminders', auth: 'staff', handler: cartReminderOversight },
 ];
