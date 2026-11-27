@@ -3,6 +3,7 @@ import { logEvent } from '@learnloop/shared/logger';
 import { getLessonForLearner, listCourseLessons } from './services/lessons.js';
 import { listProgressOverview, recordLessonProgress } from './services/progress.js';
 import { submitQuiz } from './services/quiz.js';
+import { readNudgeOversight } from './agents/nudgeOversight.js';
 
 async function courseLessons({ user, params }) {
   return ok({ lessons: await listCourseLessons(user.userId, params.courseId) });
@@ -27,10 +28,15 @@ async function myProgress({ user }) {
   return ok({ courses });
 }
 
+async function agentNudges({ now }) {
+  return ok(await readNudgeOversight(now));
+}
+
 export const routes = [
   { method: 'GET', path: '/api/courses/{courseId}/lessons', auth: 'user', handler: courseLessons },
   { method: 'GET', path: '/api/lessons/{lessonId}', auth: 'user', handler: lesson },
   { method: 'POST', path: '/api/lessons/{lessonId}/progress', auth: 'user', handler: progress },
   { method: 'POST', path: '/api/lessons/{lessonId}/quiz', auth: 'user', handler: quiz },
   { method: 'GET', path: '/api/me/progress', auth: 'user', handler: myProgress },
+  { method: 'GET', path: '/api/admin/agent-nudges', auth: 'staff', handler: agentNudges },
 ];
