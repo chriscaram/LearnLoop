@@ -1,4 +1,5 @@
 import { ok } from '@learnloop/shared/http';
+import { listAgentOversight } from '@learnloop/learning/agents/oversight';
 import { getFlags, updateFlag } from './services/flags.js';
 import { listLearners, listOrganizationNames } from './services/learners.js';
 import { sendStaffMessage } from './services/messages.js';
@@ -6,6 +7,8 @@ import { listSupportQueue, replyToLearner } from './services/support.js';
 import { getLearnerTraining } from './services/training.js';
 
 async function learners({ query, now }) {
+  // Read-only oversight of what the AI agent sent (ga-find_42f472c7e4c8).
+  if (query.view === 'agent_nudges') return ok(await listAgentOversight(await listLearners(now), now));
   const [rows, organizations] = await Promise.all([listLearners(now, { organizationId: query.organization }), listOrganizationNames()]);
   return ok({ learners: rows, organizations });
 }
